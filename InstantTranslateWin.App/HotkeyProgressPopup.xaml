@@ -1,0 +1,164 @@
+<ui:FluentWindow x:Class="InstantTranslateWin.App.HotkeyProgressPopup"
+                 xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                 xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+                 xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+                 xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+                 mc:Ignorable="d"
+                 Width="400"
+                 MinHeight="0"
+                 SizeToContent="Height"
+                 ShowInTaskbar="False"
+                 ShowActivated="False"
+                 Topmost="True"
+                 ResizeMode="NoResize"
+                 WindowStyle="None"
+                 ExtendsContentIntoTitleBar="False"
+                 PreviewKeyDown="Window_PreviewKeyDown">
+    <Grid Margin="8"
+          MouseEnter="ShellBorder_OnMouseEnter"
+          MouseLeave="ShellBorder_OnMouseLeave">
+        <ui:Card Padding="12">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Orientation="Horizontal">
+                        <Border x:Name="LogoBadge"
+                                Width="30"
+                                Height="30"
+                                CornerRadius="9"
+                                Background="{DynamicResource ControlFillColorDefaultBrush}"
+                                BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                                BorderThickness="1">
+                            <Image Width="18"
+                                   Height="18"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"
+                                   Source="pack://application:,,,/Assets/instant-translate-app-icon.png" />
+                        </Border>
+                        <TextBlock x:Name="TitleTextBlock"
+                                   Margin="8,0,0,0"
+                                   VerticalAlignment="Center"
+                                   Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                                   FontWeight="SemiBold"
+                                   FontSize="13"
+                                   Text="Đang xử lý hotkey..." />
+                    </StackPanel>
+
+                    <ui:Button Grid.Column="1"
+                               Width="26"
+                               Height="26"
+                               Padding="0"
+                               HorizontalAlignment="Right"
+                               VerticalAlignment="Center"
+                               Appearance="Transparent"
+                               Icon="{ui:SymbolIcon Dismiss24}"
+                               ToolTip="Đóng"
+                               Click="CloseButton_OnClick" />
+                </Grid>
+
+                <Grid Grid.Row="1"
+                      Margin="0,8,0,0">
+                    <StackPanel x:Name="LoadingPage"
+                                VerticalAlignment="Top">
+                        <ui:Card x:Name="PreviewBorder"
+                                 Padding="8,6">
+                            <TextBlock x:Name="SourcePreviewTextBlock"
+                                       FontSize="12"
+                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                       Text="Nguồn: chưa có nội dung"
+                                       TextTrimming="CharacterEllipsis"
+                                       TextWrapping="NoWrap" />
+                        </ui:Card>
+
+                        <ui:Card Margin="0,8,0,0"
+                                 Padding="8">
+                            <StackPanel>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <Border x:Name="StepIconBadge"
+                                            Width="22"
+                                            Height="22"
+                                            VerticalAlignment="Center"
+                                            CornerRadius="11">
+                                        <ui:SymbolIcon x:Name="StepStatusIcon"
+                                                       HorizontalAlignment="Center"
+                                                       VerticalAlignment="Center"
+                                                       Symbol="Rocket24"
+                                                       Foreground="White" />
+                                    </Border>
+
+                                    <TextBlock x:Name="StepStatusTextBlock"
+                                               Grid.Column="1"
+                                               Margin="8,0,0,0"
+                                               VerticalAlignment="Center"
+                                               Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                                               FontSize="12"
+                                               FontWeight="SemiBold"
+                                               Text="Khởi tạo..." />
+
+                                    <ui:ProgressRing x:Name="WorkingProgressRing"
+                                                     Grid.Column="2"
+                                                     Width="16"
+                                                     Height="16"
+                                                     Margin="8,0,0,0"
+                                                     VerticalAlignment="Center"
+                                                     IsIndeterminate="True" />
+                                </Grid>
+                            </StackPanel>
+                        </ui:Card>
+
+                    </StackPanel>
+
+                    <StackPanel x:Name="ResultPage"
+                                VerticalAlignment="Top"
+                                Visibility="Hidden">
+                        <StackPanel Orientation="Horizontal"
+                                    VerticalAlignment="Center">
+                            <Border x:Name="ResultIconBadge"
+                                    Width="26"
+                                    Height="26"
+                                    CornerRadius="13">
+                                <ui:SymbolIcon x:Name="ResultStateIcon"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center"
+                                               Symbol="Checkmark24" />
+                            </Border>
+                            <TextBlock x:Name="ResultTitleTextBlock"
+                                       Margin="8,0,0,0"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                                       FontWeight="SemiBold"
+                                       FontSize="12"
+                                       Text="Dịch thành công" />
+                        </StackPanel>
+
+                        <ui:Card Margin="0,8,0,0"
+                                 Padding="8,6">
+                            <TextBlock x:Name="ResultMessageTextBlock"
+                                       FontSize="12"
+                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                       TextTrimming="CharacterEllipsis"
+                                       TextWrapping="NoWrap"
+                                       Text="Kết quả" />
+                        </ui:Card>
+                    </StackPanel>
+                </Grid>
+            </Grid>
+        </ui:Card>
+    </Grid>
+</ui:FluentWindow>

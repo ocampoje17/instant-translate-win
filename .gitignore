@@ -1,0 +1,28 @@
+# Build outputs
+**/bin/
+**/obj/
+**/.codex_build/
+_buildcheck/
+
+# Publish / installer artifacts
+artifacts/publish/
+artifacts/setup/
+
+# Tooling cache
+.tools/
+.wix/
+
+# IDE / user files
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Logs
+*.log
+*.tmp
+
+# OS files
+.DS_Store
+Thumbs.db

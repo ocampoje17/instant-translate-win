@@ -1,0 +1,618 @@
+<ui:FluentWindow x:Class="InstantTranslateWin.App.MainWindow"
+                 xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                 xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+                 xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+                 xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+                 xmlns:controls="clr-namespace:InstantTranslateWin.App.Controls"
+                 xmlns:tray="http://schemas.lepo.co/wpfui/2022/xaml/tray"
+                 mc:Ignorable="d"
+                 Title="Instant Translate"
+                 Icon="pack://application:,,,/Assets/instant-translate-app-icon.png"
+                 ExtendsContentIntoTitleBar="True"
+                 Width="1000"
+                 Height="700"
+                 MinWidth="900"
+                 MinHeight="620">
+    <ui:FluentWindow.Resources>
+        <ContextMenu x:Key="TrayMenu">
+            <ui:MenuItem Header="Mở lại" Icon="{ui:SymbolIcon Window24}" Click="TrayOpenMenuItem_Click" />
+            <Separator />
+            <ui:MenuItem Header="Thoát" Icon="{ui:SymbolIcon Delete24}" Click="TrayExitMenuItem_Click" />
+        </ContextMenu>
+    </ui:FluentWindow.Resources>
+
+    <Grid x:Name="MainRootGrid">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <tray:NotifyIcon x:Name="AppNotifyIcon"
+                         TooltipText="Instant Translate"
+                         Icon="pack://application:,,,/Assets/instant-translate-tray-icon.png"
+                         Menu="{StaticResource TrayMenu}"
+                         MenuOnRightClick="True"
+                         LeftDoubleClick="AppNotifyIcon_OnLeftDoubleClick" />
+
+        <ui:TitleBar Title="Instant Translate">
+            <ui:TitleBar.Icon>
+                <ui:ImageIcon Source="pack://application:,,,/Assets/instant-translate-app-icon.png" />
+            </ui:TitleBar.Icon>
+        </ui:TitleBar>
+
+        <Grid x:Name="MainContentGrid" Grid.Row="1" Margin="12,10,12,12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <ui:NavigationView x:Name="RootNavigationView"
+                               Grid.Column="0"
+                               Margin="0,0,8,0"
+                               PaneTitle="Điều hướng"
+                               IsBackButtonVisible="Auto"
+                               IsPaneToggleVisible="True"
+                               IsFooterSeparatorVisible="True"
+                               PaneDisplayMode="LeftFluent"
+                               BackRequested="RootNavigationView_BackRequested"
+                               SelectionChanged="RootNavigationView_SelectionChanged">
+            <ui:NavigationView.MenuItems>
+                <ui:NavigationViewItem x:Name="QuickNavItem"
+                                       TargetPageTag="quick"
+                                       Click="QuickNavItem_Click"
+                                       Content="Dịch nhanh"
+                                       Icon="{ui:SymbolIcon Translate24}" />
+                <ui:NavigationViewItem x:Name="ManualNavItem"
+                                       TargetPageTag="manual"
+                                       Click="ManualNavItem_Click"
+                                       Content="Dịch thủ công"
+                                       Icon="{ui:SymbolIcon ArrowSync24}" />
+                <ui:NavigationViewItem x:Name="HistoryNavItem"
+                                       TargetPageTag="history"
+                                       Click="HistoryNavItem_Click"
+                                       Content="Lịch sử"
+                                       Icon="{ui:SymbolIcon History24}" />
+            </ui:NavigationView.MenuItems>
+            <ui:NavigationView.FooterMenuItems>
+                <ui:NavigationViewItem x:Name="SettingsNavItem"
+                                       TargetPageTag="settings"
+                                       Click="SettingsNavItem_Click"
+                                       Content="Cài đặt"
+                                       Icon="{ui:SymbolIcon Settings24}" />
+            </ui:NavigationView.FooterMenuItems>
+            </ui:NavigationView>
+
+            <TabControl x:Name="ContentTabControl"
+                        Grid.Column="1"
+                        BorderThickness="0"
+                        Background="Transparent">
+                <TabControl.Resources>
+                    <Style TargetType="TabItem">
+                        <Setter Property="Visibility" Value="Collapsed" />
+                    </Style>
+                </TabControl.Resources>
+            <TabItem>
+                <TabItem.Header>
+                    <StackPanel Orientation="Horizontal">
+                        <ui:SymbolIcon Symbol="Translate24" Margin="0,0,6,0" />
+                        <TextBlock Text="Dịch nhanh" />
+                    </StackPanel>
+                </TabItem.Header>
+
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="0,0,0,8">
+                        <ui:Card Margin="0,0,0,12">
+                            <StackPanel Margin="16">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="Rocket24" Margin="0,0,8,0" />
+                                    <TextBlock FontSize="16"
+                                               FontWeight="SemiBold"
+                                               Text="Dịch đoạn đang chọn bằng phím tắt toàn cục" />
+                                </StackPanel>
+                                <TextBlock Margin="0,8,0,0"
+                                           Text="1. Chọn text trong bất kỳ ô input nào trên Windows." />
+                                <TextBlock Text="2. Nhấn phím tắt đã cấu hình (mặc định Ctrl+Shift+E)." />
+                                <TextBlock Text="3. App sẽ copy đoạn dịch sang clipboard và lưu lịch sử." />
+                                <TextBlock Margin="0,10,0,0"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                           Text="Bấm nút đóng cửa sổ để ẩn app xuống tray và chạy nền." />
+                            </StackPanel>
+                        </ui:Card>
+
+                        <ui:Card x:Name="TranslateProgressCard"
+                                 Margin="0,0,0,12">
+                            <controls:TranslationProgressView x:Name="QuickTranslationProgressView"
+                                                              Margin="16"
+                                                              HeaderText="Trạng thái hiện tại" />
+                        </ui:Card>
+
+                        <ui:Card>
+                            <StackPanel Margin="16">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="Clipboard24" Margin="0,0,8,0" />
+                                    <TextBlock FontSize="16"
+                                               FontWeight="SemiBold"
+                                               Text="Kết quả gần nhất từ phím tắt" />
+                                </StackPanel>
+                                <TextBlock Margin="0,10,0,0"
+                                           FontWeight="SemiBold"
+                                           Text="Nguồn" />
+                                <TextBox x:Name="LastSourceTextBox"
+                                         Height="90"
+                                         IsReadOnly="True"
+                                         AcceptsReturn="True"
+                                         TextWrapping="Wrap"
+                                         VerticalScrollBarVisibility="Auto" />
+                                <TextBlock Margin="0,10,0,0"
+                                           FontWeight="SemiBold"
+                                           Text="Bản dịch" />
+                                <TextBox x:Name="LastTranslatedTextBox"
+                                         Height="90"
+                                         IsReadOnly="True"
+                                         AcceptsReturn="True"
+                                         TextWrapping="Wrap"
+                                         VerticalScrollBarVisibility="Auto" />
+                            </StackPanel>
+                        </ui:Card>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem>
+                <TabItem.Header>
+                    <StackPanel Orientation="Horizontal">
+                        <ui:SymbolIcon Symbol="ArrowSync24" Margin="0,0,6,0" />
+                        <TextBlock Text="Dịch thủ công" />
+                    </StackPanel>
+                </TabItem.Header>
+
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="0,0,0,8">
+                        <ui:Card Margin="0,0,0,12">
+                            <StackPanel Margin="16">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="Translate24" Margin="0,0,8,0" />
+                                    <TextBlock FontSize="16"
+                                               FontWeight="SemiBold"
+                                               Text="Dịch thủ công" />
+                                </StackPanel>
+                                <TextBox x:Name="ManualSourceTextBox"
+                                         Margin="0,8,0,0"
+                                         Height="120"
+                                         AcceptsReturn="True"
+                                         TextWrapping="Wrap"
+                                         VerticalScrollBarVisibility="Auto" />
+                                <TextBlock Margin="0,10,0,0"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                           Text="Ngôn ngữ đích cho bản dịch thủ công" />
+                                <ComboBox x:Name="ManualTargetLanguageComboBox"
+                                          Margin="0,6,0,0"
+                                          MinWidth="250"
+                                          DisplayMemberPath="DisplayName"
+                                          SelectedValuePath="PromptName"
+                                          ItemsSource="{Binding TargetLanguageOptions}"
+                                          SelectionChanged="ManualTargetLanguageComboBox_SelectionChanged" />
+                                <ui:Button x:Name="TranslateManualButton"
+                                           Margin="0,10,0,0"
+                                           Padding="14,6"
+                                           HorizontalAlignment="Left"
+                                           Icon="{ui:SymbolIcon ArrowSync24}"
+                                           Click="TranslateManualButton_Click"
+                                           Content="Dịch theo ngôn ngữ đích" />
+                                <TextBox x:Name="ManualResultTextBox"
+                                         Margin="0,10,0,0"
+                                         Height="120"
+                                         IsReadOnly="True"
+                                         AcceptsReturn="True"
+                                         TextWrapping="Wrap"
+                                         VerticalScrollBarVisibility="Auto" />
+                            </StackPanel>
+                        </ui:Card>
+
+                        <ui:Card Margin="0,0,0,12">
+                            <controls:TranslationProgressView x:Name="ManualTranslationProgressView"
+                                                              Margin="16"
+                                                              HeaderText="Trạng thái dịch thủ công" />
+                        </ui:Card>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem>
+                <TabItem.Header>
+                    <StackPanel Orientation="Horizontal">
+                        <ui:SymbolIcon Symbol="History24" Margin="0,0,6,0" />
+                        <TextBlock Text="Lịch sử" />
+                    </StackPanel>
+                </TabItem.Header>
+
+                <Grid Margin="0,8,0,0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Orientation="Horizontal">
+                        <ui:Button Padding="12,4"
+                                   Icon="{ui:SymbolIcon Copy24}"
+                                   Click="CopySelectedHistoryButton_Click"
+                                   Content="Copy bản dịch đã chọn" />
+                        <ui:Button Margin="8,0,0,0"
+                                   Padding="12,4"
+                                   Icon="{ui:SymbolIcon Delete24}"
+                                   Click="ClearHistoryButton_Click"
+                                   Content="Xóa toàn bộ lịch sử" />
+                    </StackPanel>
+
+                    <ui:ListView x:Name="HistoryListView"
+                                 Grid.Row="1"
+                                 Margin="0,12,0,0"
+                                 Padding="4"
+                                 SelectionMode="Single"
+                                 ItemsSource="{Binding HistoryRecords}">
+                        <ui:ListView.ItemTemplate>
+                            <DataTemplate>
+                                <ui:Card Margin="0,0,0,8">
+                                    <StackPanel Margin="12">
+                                        <TextBlock FontWeight="SemiBold"
+                                                   Text="{Binding TimestampDisplay}" />
+                                        <TextBlock Margin="0,6,0,0"
+                                                   FontWeight="SemiBold"
+                                                   Text="Nguồn" />
+                                        <TextBlock Text="{Binding SourceText}" TextWrapping="Wrap" />
+                                        <TextBlock Margin="0,8,0,0"
+                                                   FontWeight="SemiBold"
+                                                   Text="Bản dịch" />
+                                        <TextBlock Text="{Binding TranslatedText}" TextWrapping="Wrap" />
+                                        <TextBlock Margin="0,8,0,0"
+                                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                                   Text="{Binding ModelName}" />
+                                    </StackPanel>
+                                </ui:Card>
+                            </DataTemplate>
+                        </ui:ListView.ItemTemplate>
+                    </ui:ListView>
+                </Grid>
+            </TabItem>
+
+            <TabItem>
+                <TabItem.Header>
+                    <StackPanel Orientation="Horizontal">
+                        <ui:SymbolIcon Symbol="Settings24" Margin="0,0,6,0" />
+                        <TextBlock Text="Cài đặt" />
+                    </StackPanel>
+                </TabItem.Header>
+
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="0,0,0,8">
+                        <ui:Card Margin="0,0,0,12">
+                            <StackPanel Margin="16">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="Key24" Margin="0,0,8,0" />
+                                    <TextBlock FontSize="16"
+                                               FontWeight="SemiBold"
+                                               Text="API và mô hình dịch" />
+                                </StackPanel>
+                                <TextBlock Margin="0,10,0,0"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                           Text="Chọn nhà cung cấp API đang sử dụng" />
+                                <StackPanel Margin="0,8,0,0"
+                                            Orientation="Horizontal">
+                                    <RadioButton x:Name="ApiProviderGeminiRadioButton"
+                                                 Margin="0,0,16,0"
+                                                 Content="Gemini"
+                                                 Checked="ApiProviderRadioButton_Checked" />
+                                    <RadioButton x:Name="ApiProviderLocalAiRadioButton"
+                                                 Content="OpenAI-compatible"
+                                                 Checked="ApiProviderRadioButton_Checked" />
+                                </StackPanel>
+
+                                <Border x:Name="GeminiSectionBorder"
+                                        Margin="0,12,0,0"
+                                        Padding="10"
+                                        CornerRadius="10"
+                                        Background="Transparent"
+                                        BorderThickness="1"
+                                        BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}">
+                                    <StackPanel>
+                                        <StackPanel Orientation="Horizontal">
+                                            <ui:SymbolIcon Symbol="Key24" Margin="0,0,8,0" />
+                                            <TextBlock FontWeight="SemiBold"
+                                                       Text="Gemini" />
+                                        </StackPanel>
+                                        <TextBlock Margin="0,6,0,0"
+                                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}">
+                                            <Run Text="Lấy API key Gemini tại: " />
+                                            <Hyperlink NavigateUri="https://aistudio.google.com/"
+                                                       RequestNavigate="GeminiApiKeyLink_OnRequestNavigate">
+                                                <Run Text="https://aistudio.google.com/" />
+                                            </Hyperlink>
+                                        </TextBlock>
+                                        <StackPanel Margin="0,10,0,0" Orientation="Horizontal">
+                                            <ui:Button Padding="12,4"
+                                                       Icon="{ui:SymbolIcon Add24}"
+                                                       Click="AddApiKeyRowButton_Click"
+                                                       Content="Thêm key" />
+                                            <ui:Button Margin="8,0,0,0"
+                                                       Padding="12,4"
+                                                       Icon="{ui:SymbolIcon SaveCopy24}"
+                                                       Click="SaveApiKeyButton_Click"
+                                                       Content="Lưu API keys" />
+                                        </StackPanel>
+                                        <ItemsControl x:Name="ApiKeysItemsControl"
+                                                      Margin="0,10,0,0"
+                                                      ItemsSource="{Binding ApiKeyInputItems}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Grid Margin="0,0,0,8">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="*" />
+                                                            <ColumnDefinition Width="Auto" />
+                                                            <ColumnDefinition Width="Auto" />
+                                                        </Grid.ColumnDefinitions>
+
+                                                        <TextBox Grid.Column="0"
+                                                                 MinWidth="360"
+                                                                 TextWrapping="Wrap"
+                                                                 Text="{Binding PlainText, UpdateSourceTrigger=PropertyChanged}"
+                                                                 ToolTip="API key sẽ được mã hóa theo user profile Windows hiện tại." />
+
+                                                        <ui:Button Grid.Column="1"
+                                                                   Margin="8,0,0,0"
+                                                                   Padding="10,4"
+                                                                   Icon="{ui:SymbolIcon Checkmark24}"
+                                                                   Click="TestApiKeyRowButton_Click"
+                                                                   Content="Test" />
+
+                                                        <ui:Button Grid.Column="2"
+                                                                   Margin="8,0,0,0"
+                                                                   Padding="8,4"
+                                                                   Appearance="Transparent"
+                                                                   Icon="{ui:SymbolIcon Dismiss24}"
+                                                                   Content="Xóa"
+                                                                   Click="RemoveApiKeyRowButton_Click"
+                                                                   ToolTip="Xóa dòng key" />
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                        <TextBlock Margin="0,4,0,0"
+                                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                                   Text="API key được mã hóa và lưu trong LocalApplicationData." />
+                                        <TextBlock Margin="0,10,0,0"
+                                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                                   Text="Model Gemini" />
+                                        <TextBox x:Name="ModelNameTextBox"
+                                                 Margin="0,6,0,0"
+                                                 MinWidth="300"
+                                                 LostFocus="SettingsControl_OnChanged" />
+                                        <TextBlock Margin="0,6,0,0"
+                                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                                   Text="Khuyến nghị: gemini-flash-lite-latest" />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border x:Name="LocalAiSectionBorder"
+                                        Margin="0,12,0,0"
+                                        Padding="10"
+                                        CornerRadius="10"
+                                        Background="Transparent"
+                                        BorderThickness="1"
+                                        BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}">
+                                    <StackPanel>
+                                        <StackPanel Orientation="Horizontal">
+                                            <ui:SymbolIcon Symbol="Laptop24" Margin="0,0,8,0" />
+                                            <TextBlock FontWeight="SemiBold"
+                                                       Text="OpenAI-compatible" />
+                                        </StackPanel>
+                                        <ui:ToggleSwitch x:Name="LocalAiUseCustomBaseUrlToggleSwitch"
+                                                         Margin="0,10,0,0"
+                                                         Content="Sử dụng base URL tuỳ chỉnh"
+                                                         Checked="LocalAiUseCustomBaseUrlToggleSwitch_OnChanged"
+                                                         Unchecked="LocalAiUseCustomBaseUrlToggleSwitch_OnChanged"
+                                                         OnContent="Bật"
+                                                         OffContent="Tắt" />
+                                        <StackPanel x:Name="LocalAiBaseUrlPanel"
+                                                    Margin="0,10,0,0">
+                                            <TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                                       Text="Base URL tuỳ chỉnh (ví dụ: http://localhost:1234/v1)" />
+                                            <TextBox x:Name="LocalAiBaseUrlTextBox"
+                                                     Margin="0,6,0,0"
+                                                     MinWidth="300"
+                                                     LostFocus="SettingsControl_OnChanged" />
+                                        </StackPanel>
+                                        <TextBlock x:Name="LocalAiApiKeyLabelTextBlock"
+                                                   Margin="0,10,0,0"
+                                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                                   Text="API key (bắt buộc)" />
+                                        <TextBox x:Name="LocalAiApiKeyTextBox"
+                                                 Margin="0,6,0,0"
+                                                 MinWidth="300" />
+                                        <TextBlock Margin="0,10,0,0"
+                                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                                   Text="Model OpenAI-compatible" />
+                                        <TextBox x:Name="LocalAiModelNameTextBox"
+                                                 Margin="0,6,0,0"
+                                                 MinWidth="300"
+                                                 LostFocus="SettingsControl_OnChanged" />
+                                        <StackPanel Margin="0,10,0,0"
+                                                    Orientation="Horizontal">
+                                            <ui:Button Padding="12,4"
+                                                       Icon="{ui:SymbolIcon SaveCopy24}"
+                                                       Click="SaveLocalAiButton_Click"
+                                                       Content="Lưu OpenAI-compatible" />
+                                            <ui:Button Margin="8,0,0,0"
+                                                       Padding="12,4"
+                                                       Icon="{ui:SymbolIcon Checkmark24}"
+                                                       Click="TestLocalAiButton_Click"
+                                                       Content="Test OpenAI-compatible" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Border>
+
+                            </StackPanel>
+                        </ui:Card>
+
+                        <ui:Card Margin="0,0,0,12">
+                            <StackPanel Margin="16">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="Settings24" Margin="0,0,8,0" />
+                                    <TextBlock FontSize="16"
+                                               FontWeight="SemiBold"
+                                               Text="Giới thiệu và hỗ trợ" />
+                                </StackPanel>
+                                <TextBlock Margin="0,8,0,0"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                           Text="Cần hỗ trợ nhanh hoặc muốn tải bản mới nhất của app?" />
+
+                                <TextBlock Margin="0,10,0,0">
+                                    <Run Text="Email: " />
+                                    <Hyperlink NavigateUri="mailto:namqhong@gmail.com"
+                                               RequestNavigate="GeminiApiKeyLink_OnRequestNavigate">
+                                        <Run Text="namqhong@gmail.com" />
+                                    </Hyperlink>
+                                </TextBlock>
+
+                                <TextBlock Margin="0,6,0,0">
+                                    <Run Text="Telegram: " />
+                                    <Hyperlink NavigateUri="https://t.me/namhnz"
+                                               RequestNavigate="GeminiApiKeyLink_OnRequestNavigate">
+                                        <Run Text="@namhnz" />
+                                    </Hyperlink>
+                                </TextBlock>
+
+                                <TextBlock Margin="0,6,0,0">
+                                    <Run Text="Google Drive: " />
+                                    <Hyperlink NavigateUri="https://drive.google.com/drive/folders/1sS4yvilY4dxbcE4pvD_65SFOrsWAlSyD?usp=sharing"
+                                               RequestNavigate="GeminiApiKeyLink_OnRequestNavigate">
+                                        <Run Text="Tải phiên bản mới nhất tại đây" />
+                                    </Hyperlink>
+                                </TextBlock>
+
+                                <StackPanel Margin="0,8,0,0"
+                                            Orientation="Horizontal"
+                                            VerticalAlignment="Center">
+                                    <ui:SymbolIcon Symbol="Code24" Margin="0,0,6,0" />
+                                    <TextBlock VerticalAlignment="Center">
+                                        <Run Text="GitHub: " />
+                                        <Hyperlink NavigateUri="https://github.com/ocampoje17/instant-translate-win"
+                                                   RequestNavigate="GeminiApiKeyLink_OnRequestNavigate">
+                                            <Run Text="github.com/ocampoje17/instant-translate-win" />
+                                        </Hyperlink>
+                                    </TextBlock>
+                                </StackPanel>
+                            </StackPanel>
+                        </ui:Card>
+
+                        <ui:Card Margin="0,0,0,12">
+                            <StackPanel Margin="16">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="Globe24" Margin="0,0,8,0" />
+                                    <TextBlock FontSize="16"
+                                               FontWeight="SemiBold"
+                                               Text="Ngôn ngữ đích" />
+                                </StackPanel>
+                                <TextBlock Margin="0,8,0,0"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                           Text="Ngôn ngữ app sẽ dịch sang khi dùng hotkey và dịch thủ công." />
+                                <ComboBox x:Name="TargetLanguageComboBox"
+                                          Margin="0,8,0,0"
+                                          MinWidth="250"
+                                          DisplayMemberPath="DisplayName"
+                                          SelectedValuePath="PromptName"
+                                          ItemsSource="{Binding TargetLanguageOptions}"
+                                          SelectionChanged="SettingsControl_OnChanged" />
+                            </StackPanel>
+                        </ui:Card>
+
+                        <ui:Card Margin="0,0,0,12">
+                            <StackPanel Margin="16">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="Apps24" Margin="0,0,8,0" />
+                                    <TextBlock FontSize="16"
+                                               FontWeight="SemiBold"
+                                               Text="Hành vi ứng dụng" />
+                                </StackPanel>
+                                <TextBlock Margin="0,10,0,0"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                           Text="Tùy chọn chạy nền và tự động hóa" />
+                                <TextBlock Margin="0,12,0,0"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                           Text="Giao diện ứng dụng" />
+                                <ComboBox x:Name="AppThemeComboBox"
+                                          Margin="0,6,0,0"
+                                          MinWidth="180"
+                                          DisplayMemberPath="DisplayName"
+                                          SelectedValuePath="ThemeKey"
+                                          ItemsSource="{Binding ThemeOptions}"
+                                          SelectionChanged="SettingsControl_OnChanged" />
+                                <ui:ToggleSwitch x:Name="CopyToClipboardCheckBox"
+                                                 Margin="0,12,0,0"
+                                                 Checked="SettingsControl_OnChanged"
+                                                 Unchecked="SettingsControl_OnChanged"
+                                                 Content="Tự động copy bản dịch vào clipboard sau khi dịch bằng hotkey"
+                                                 OnContent="Bật"
+                                                 OffContent="Tắt" />
+                                <ui:ToggleSwitch x:Name="KeepRunningInBackgroundOnCloseCheckBox"
+                                                 Margin="0,10,0,0"
+                                                 Content="Tiếp tục chạy nền khi đóng cửa sổ"
+                                                 Checked="SettingsControl_OnChanged"
+                                                 Unchecked="SettingsControl_OnChanged"
+                                                 OnContent="Bật"
+                                                 OffContent="Tắt" />
+                                <ui:ToggleSwitch x:Name="StartupWithWindowsCheckBox"
+                                                 Margin="0,10,0,0"
+                                                 Content="Khởi động cùng Windows"
+                                                 Checked="SettingsControl_OnChanged"
+                                                 Unchecked="SettingsControl_OnChanged"
+                                                 OnContent="Bật"
+                                                 OffContent="Tắt" />
+                            </StackPanel>
+                        </ui:Card>
+
+                        <ui:Card Margin="0,0,0,12">
+                            <StackPanel Margin="16">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="Keyboard24" Margin="0,0,8,0" />
+                                    <TextBlock FontSize="16"
+                                               FontWeight="SemiBold"
+                                               Text="Phím tắt toàn cục" />
+                                </StackPanel>
+                                <TextBlock Margin="0,8,0,0"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                           Text="Tổ hợp phím để dịch nhanh từ ứng dụng khác." />
+                                <WrapPanel Margin="0,10,0,0">
+                                    <CheckBox x:Name="HotkeyCtrlCheckBox" Margin="0,0,10,0" Content="Ctrl" Checked="SettingsControl_OnChanged" Unchecked="SettingsControl_OnChanged" />
+                                    <CheckBox x:Name="HotkeyShiftCheckBox" Margin="0,0,10,0" Content="Shift" Checked="SettingsControl_OnChanged" Unchecked="SettingsControl_OnChanged" />
+                                    <CheckBox x:Name="HotkeyAltCheckBox" Margin="0,0,10,0" Content="Alt" Checked="SettingsControl_OnChanged" Unchecked="SettingsControl_OnChanged" />
+                                    <CheckBox x:Name="HotkeyWinCheckBox" Margin="0,0,10,0" Content="Win" Checked="SettingsControl_OnChanged" Unchecked="SettingsControl_OnChanged" />
+                                </WrapPanel>
+                                <StackPanel Margin="0,10,0,0" Orientation="Horizontal">
+                                    <TextBlock VerticalAlignment="Center" Text="Phím chính:" />
+                                    <ComboBox x:Name="HotkeyKeyComboBox"
+                                              Width="130"
+                                              Margin="8,0,0,0"
+                                              ItemsSource="{Binding HotkeyKeyOptions}"
+                                              SelectionChanged="SettingsControl_OnChanged" />
+                                </StackPanel>
+                                <TextBlock x:Name="HotkeyPreviewTextBlock"
+                                           Margin="0,10,0,0"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                           Text="Hotkey hiện tại: Ctrl+Shift+E" />
+                            </StackPanel>
+                        </ui:Card>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+            </TabControl>
+
+            <ui:SnackbarPresenter x:Name="StatusSnackbarPresenter"
+                                  Grid.Column="1"
+                                  Margin="0,0,20,20"
+                                  HorizontalAlignment="Right"
+                                  VerticalAlignment="Bottom"
+                                  Panel.ZIndex="20" />
+        </Grid>
+    </Grid>
+</ui:FluentWindow>

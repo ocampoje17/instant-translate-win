@@ -1,0 +1,53 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="Instant Translate Win v$(var.ProductVersion)" Manufacturer="Nam" Version="$(var.ProductVersion)" UpgradeCode="5A3421D3-8CC9-4B9D-9B63-0B6EE8FB9B16" Language="1033" Scope="perMachine">
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Instant Translate Win is already installed." />
+    <Icon Id="AppIcon" SourceFile="$(sys.SOURCEFILEDIR)instant-translate-app-icon.ico" />
+    <Property Id="ARPPRODUCTICON" Value="AppIcon" />
+
+    <StandardDirectory Id="ProgramFilesFolder">
+      <Directory Id="INSTALLFOLDER" Name="Instant Translate Win" />
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ApplicationProgramsFolder" Name="Instant Translate Win" />
+    </StandardDirectory>
+    <StandardDirectory Id="DesktopFolder" />
+
+    <Feature Id="MainFeature" Title="Instant Translate Win" Level="1">
+      <ComponentGroupRef Id="AppFiles" />
+    </Feature>
+  </Package>
+
+  <Fragment>
+    <ComponentGroup Id="AppFiles" Directory="INSTALLFOLDER">
+      <Files Include="$(var.PublishDir)\**" />
+      <Component Id="ApplicationShortcutsComponent" Guid="*">
+        <Shortcut Id="ApplicationDesktopShortcut"
+                  Directory="DesktopFolder"
+                  Name="Instant Translate Win"
+                  Description="Instant Translate Win"
+                  Target="[INSTALLFOLDER]InstantTranslateWin.App.exe"
+                  WorkingDirectory="INSTALLFOLDER"
+                  Icon="AppIcon"
+                  IconIndex="0" />
+        <Shortcut Id="ApplicationStartMenuShortcut"
+                  Directory="ApplicationProgramsFolder"
+                  Name="Instant Translate Win"
+                  Description="Instant Translate Win"
+                  Target="[INSTALLFOLDER]InstantTranslateWin.App.exe"
+                  WorkingDirectory="INSTALLFOLDER"
+                  Icon="AppIcon"
+                  IconIndex="0" />
+        <RemoveFolder Id="RemoveApplicationProgramsFolder"
+                      Directory="ApplicationProgramsFolder"
+                      On="uninstall" />
+        <RegistryValue Root="HKLM"
+                       Key="Software\Nam\InstantTranslateWin"
+                       Name="ShortcutsInstalled"
+                       Type="integer"
+                       Value="1"
+                       KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+  </Fragment>
+</Wix>

@@ -1,0 +1,18 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:bal="http://wixtoolset.org/schemas/v4/wxs/bal">
+  <Bundle Name="Instant Translate Win Setup v$(var.DisplayVersion) (x86)"
+          Manufacturer="Nam"
+          Version="$(var.BundleVersion)"
+          UpgradeCode="F0D12202-DFA6-4F4D-AAB2-3D435D76CE05"
+          IconSourceFile="$(sys.SOURCEFILEDIR)instant-translate-setup-icon.ico">
+    <BootstrapperApplication>
+      <bal:WixStandardBootstrapperApplication
+          Theme="hyperlinkLicense"
+          LicenseUrl="https://opensource.org/license/mit/" />
+    </BootstrapperApplication>
+
+    <Chain>
+      <MsiPackage SourceFile="$(var.MsiPath)" />
+    </Chain>
+  </Bundle>
+</Wix>
