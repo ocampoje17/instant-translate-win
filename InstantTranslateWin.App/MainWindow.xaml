@@ -457,57 +457,6 @@
                         <ui:Card Margin="0,0,0,12">
                             <StackPanel Margin="16">
                                 <StackPanel Orientation="Horizontal">
-                                    <ui:SymbolIcon Symbol="Settings24" Margin="0,0,8,0" />
-                                    <TextBlock FontSize="16"
-                                               FontWeight="SemiBold"
-                                               Text="Giới thiệu và hỗ trợ" />
-                                </StackPanel>
-                                <TextBlock Margin="0,8,0,0"
-                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                                           Text="Cần hỗ trợ nhanh hoặc muốn tải bản mới nhất của app?" />
-
-                                <TextBlock Margin="0,10,0,0">
-                                    <Run Text="Email: " />
-                                    <Hyperlink NavigateUri="mailto:namqhong@gmail.com"
-                                               RequestNavigate="GeminiApiKeyLink_OnRequestNavigate">
-                                        <Run Text="namqhong@gmail.com" />
-                                    </Hyperlink>
-                                </TextBlock>
-
-                                <TextBlock Margin="0,6,0,0">
-                                    <Run Text="Telegram: " />
-                                    <Hyperlink NavigateUri="https://t.me/namhnz"
-                                               RequestNavigate="GeminiApiKeyLink_OnRequestNavigate">
-                                        <Run Text="@namhnz" />
-                                    </Hyperlink>
-                                </TextBlock>
-
-                                <TextBlock Margin="0,6,0,0">
-                                    <Run Text="Google Drive: " />
-                                    <Hyperlink NavigateUri="https://drive.google.com/drive/folders/1sS4yvilY4dxbcE4pvD_65SFOrsWAlSyD?usp=sharing"
-                                               RequestNavigate="GeminiApiKeyLink_OnRequestNavigate">
-                                        <Run Text="Tải phiên bản mới nhất tại đây" />
-                                    </Hyperlink>
-                                </TextBlock>
-
-                                <StackPanel Margin="0,8,0,0"
-                                            Orientation="Horizontal"
-                                            VerticalAlignment="Center">
-                                    <ui:SymbolIcon Symbol="Code24" Margin="0,0,6,0" />
-                                    <TextBlock VerticalAlignment="Center">
-                                        <Run Text="GitHub: " />
-                                        <Hyperlink NavigateUri="https://github.com/ocampoje17/instant-translate-win"
-                                                   RequestNavigate="GeminiApiKeyLink_OnRequestNavigate">
-                                            <Run Text="github.com/ocampoje17/instant-translate-win" />
-                                        </Hyperlink>
-                                    </TextBlock>
-                                </StackPanel>
-                            </StackPanel>
-                        </ui:Card>
-
-                        <ui:Card Margin="0,0,0,12">
-                            <StackPanel Margin="16">
-                                <StackPanel Orientation="Horizontal">
                                     <ui:SymbolIcon Symbol="Globe24" Margin="0,0,8,0" />
                                     <TextBlock FontSize="16"
                                                FontWeight="SemiBold"
@@ -602,6 +551,8 @@
                                            Text="Hotkey hiện tại: Ctrl+Shift+E" />
                             </StackPanel>
                         </ui:Card>
+
+                        <controls:SupportInfoCard Margin="0,0,0,12" />
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>

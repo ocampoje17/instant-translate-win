@@ -25,6 +25,8 @@ $x64MsiPath = Join-Path $setupDir "InstantTranslateWin-Setup-$versionSuffix-x64.
 $x86MsiPath = Join-Path $setupDir "InstantTranslateWin-Setup-$versionSuffix-x86.msi"
 $x64ExePath = Join-Path $setupDir "InstantTranslateWin-Setup-$versionSuffix-x64.exe"
 $x86ExePath = Join-Path $setupDir "InstantTranslateWin-Setup-$versionSuffix-x86.exe"
+$x64ZipPath = Join-Path $setupDir "InstantTranslateWin-Setup-$versionSuffix-x64.zip"
+$x86ZipPath = Join-Path $setupDir "InstantTranslateWin-Setup-$versionSuffix-x86.zip"
 
 if ($Version -notmatch '^\d+\.\d+\.\d+$')
 {
@@ -66,4 +68,19 @@ dotnet publish $projectPath -c $Configuration -r win-x86 --self-contained true -
 & $wixPath build $x64BundleWxs -d MsiPath=$x64MsiPath -d BundleVersion=$bundleVersion -d DisplayVersion=$Version -ext WixToolset.BootstrapperApplications.wixext -out $x64ExePath
 & $wixPath build $x86BundleWxs -d MsiPath=$x86MsiPath -d BundleVersion=$bundleVersion -d DisplayVersion=$Version -ext WixToolset.BootstrapperApplications.wixext -out $x86ExePath
 
-Get-ChildItem $setupDir -Filter "*.exe" | Select-Object FullName, Length, LastWriteTime
+if (Test-Path $x64ZipPath)
+{
+    Remove-Item -Path $x64ZipPath -Force
+}
+
+if (Test-Path $x86ZipPath)
+{
+    Remove-Item -Path $x86ZipPath -Force
+}
+
+Compress-Archive -Path $x64ExePath -DestinationPath $x64ZipPath -CompressionLevel Optimal
+Compress-Archive -Path $x86ExePath -DestinationPath $x86ZipPath -CompressionLevel Optimal
+
+Remove-Item -Path $x64MsiPath, $x86MsiPath -Force -ErrorAction SilentlyContinue
+
+Get-ChildItem $setupDir | Select-Object Name, FullName, Length, LastWriteTime

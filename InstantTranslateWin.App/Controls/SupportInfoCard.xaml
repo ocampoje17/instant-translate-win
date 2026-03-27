@@ -1,0 +1,86 @@
+<UserControl x:Class="InstantTranslateWin.App.Controls.SupportInfoCard"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             mc:Ignorable="d">
+    <ui:Card>
+        <StackPanel Margin="16">
+            <StackPanel Orientation="Horizontal">
+                <ui:SymbolIcon Symbol="Settings24" Margin="0,0,8,0" />
+                <TextBlock FontSize="16"
+                           FontWeight="SemiBold"
+                           Text="Giới thiệu và hỗ trợ" />
+            </StackPanel>
+            <TextBlock Margin="0,8,0,0"
+                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                       Text="Cần hỗ trợ nhanh hoặc muốn tải bản mới nhất của app?" />
+
+            <StackPanel Margin="0,10,0,0"
+                        Orientation="Horizontal"
+                        VerticalAlignment="Center">
+                <ui:SymbolIcon Symbol="Mail24" Margin="0,0,6,0" />
+                <TextBlock VerticalAlignment="Center">
+                    <Run Text="Email: " />
+                    <Hyperlink NavigateUri="mailto:namqhong@gmail.com"
+                               RequestNavigate="SupportLink_OnRequestNavigate">
+                        <Run Text="namqhong@gmail.com" />
+                    </Hyperlink>
+                </TextBlock>
+            </StackPanel>
+
+            <StackPanel Margin="0,6,0,0"
+                        Orientation="Horizontal"
+                        VerticalAlignment="Center">
+                <ui:SymbolIcon Symbol="Send24" Margin="0,0,6,0" />
+                <TextBlock VerticalAlignment="Center">
+                    <Run Text="Telegram: " />
+                    <Hyperlink NavigateUri="https://t.me/namhnz"
+                               RequestNavigate="SupportLink_OnRequestNavigate">
+                        <Run Text="@namhnz" />
+                    </Hyperlink>
+                </TextBlock>
+            </StackPanel>
+
+            <StackPanel Margin="0,6,0,0"
+                        Orientation="Horizontal"
+                        VerticalAlignment="Center">
+                <ui:SymbolIcon Symbol="ArrowDownload24" Margin="0,0,6,0" />
+                <TextBlock VerticalAlignment="Center">
+                    <Run Text="Google Drive: " />
+                    <Hyperlink NavigateUri="https://drive.google.com/drive/folders/1sS4yvilY4dxbcE4pvD_65SFOrsWAlSyD?usp=sharing"
+                               RequestNavigate="SupportLink_OnRequestNavigate">
+                        <Run Text="Tải phiên bản mới nhất tại đây" />
+                    </Hyperlink>
+                </TextBlock>
+            </StackPanel>
+
+            <StackPanel Margin="0,6,0,0"
+                        Orientation="Horizontal"
+                        VerticalAlignment="Center">
+                <ui:SymbolIcon Symbol="Home24" Margin="0,0,6,0" />
+                <TextBlock VerticalAlignment="Center">
+                    <Run Text="Trang chủ: " />
+                    <Hyperlink NavigateUri="https://translate.laychu.com"
+                               RequestNavigate="SupportLink_OnRequestNavigate">
+                        <Run Text="https://translate.laychu.com" />
+                    </Hyperlink>
+                </TextBlock>
+            </StackPanel>
+
+            <StackPanel Margin="0,8,0,0"
+                        Orientation="Horizontal"
+                        VerticalAlignment="Center">
+                <ui:SymbolIcon Symbol="Code24" Margin="0,0,6,0" />
+                <TextBlock VerticalAlignment="Center">
+                    <Run Text="GitHub: " />
+                    <Hyperlink NavigateUri="https://github.com/ocampoje17/instant-translate-win"
+                               RequestNavigate="SupportLink_OnRequestNavigate">
+                        <Run Text="github.com/ocampoje17/instant-translate-win" />
+                    </Hyperlink>
+                </TextBlock>
+            </StackPanel>
+        </StackPanel>
+    </ui:Card>
+</UserControl>
