@@ -385,6 +385,7 @@ public partial class MainWindow : FluentWindow
         if (_hotkeyPopup is null)
         {
             _hotkeyPopup = new HotkeyProgressPopup();
+            _hotkeyPopup.RestartAppRequested += HotkeyPopupOnRestartAppRequested;
         }
 
         if (!TryShowHotkeyPopup(_hotkeyPopup))
@@ -399,6 +400,7 @@ public partial class MainWindow : FluentWindow
             }
 
             _hotkeyPopup = new HotkeyProgressPopup();
+            _hotkeyPopup.RestartAppRequested += HotkeyPopupOnRestartAppRequested;
             if (!TryShowHotkeyPopup(_hotkeyPopup))
             {
                 _hotkeyPopup = null;
@@ -409,6 +411,34 @@ public partial class MainWindow : FluentWindow
 
         _hotkeyPopup.BeginProgress("Đang xử lý hotkey...", string.Empty);
         return _hotkeyPopup;
+    }
+
+    private void HotkeyPopupOnRestartAppRequested(object? sender, EventArgs e)
+    {
+        try
+        {
+            var currentExePath = Environment.ProcessPath;
+            if (string.IsNullOrWhiteSpace(currentExePath))
+            {
+                ShowStatus("Không thể khởi động lại app", "Không xác định được đường dẫn ứng dụng hiện tại.", InfoBarSeverity.Error);
+                return;
+            }
+
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = currentExePath,
+                UseShellExecute = true,
+                WorkingDirectory = AppContext.BaseDirectory
+            });
+
+            _allowClose = true;
+            AppNotifyIcon.Unregister();
+            Close();
+        }
+        catch (Exception ex)
+        {
+            ShowStatus("Không thể khởi động lại app", ex.Message, InfoBarSeverity.Error);
+        }
     }
 
     private static bool TryShowHotkeyPopup(HotkeyProgressPopup popup)
@@ -486,9 +516,16 @@ public partial class MainWindow : FluentWindow
 
             if (string.IsNullOrWhiteSpace(selectedText))
             {
+                var popup = ShowHotkeyProgressPopup();
+                if (popup is not null)
+                {
+                    popup.AddStep("Không thể đọc text đang chọn.");
+                    popup.SetErrorState("Hãy chọn lại đoạn văn bản rồi thử lại. Nếu vẫn lỗi, hãy khởi động lại app.", showRestartAction: true);
+                }
+
                 ShowStatus(
                     "Không có text",
-                    "Không đọc được text đang chọn. Hãy thử chọn lại rồi nhấn phím tắt.",
+                    "Không đọc được text đang chọn. Hãy thử chọn lại; nếu vẫn lỗi, hãy khởi động lại app.",
                     InfoBarSeverity.Warning
                 );
                 return;
@@ -841,7 +878,7 @@ public partial class MainWindow : FluentWindow
             if (popup is not null)
             {
                 popup.AddStep("Xảy ra lỗi trong quá trình dịch.");
-                popup.SetErrorState(ex.Message);
+                popup.SetErrorState(ex.Message, showRestartAction: false);
                 popup.ScheduleClose(TimeSpan.FromSeconds(3));
             }
 

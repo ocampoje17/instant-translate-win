@@ -9,6 +9,8 @@ namespace InstantTranslateWin.App;
 
 public partial class HotkeyProgressPopup : FluentWindow
 {
+    public event EventHandler? RestartAppRequested;
+
     private static readonly TimeSpan HoverCloseDelay = TimeSpan.FromSeconds(3);
     private const uint MonitorDefaultToNearest = 0x00000002;
 
@@ -108,6 +110,7 @@ public partial class HotkeyProgressPopup : FluentWindow
 
         LoadingPage.Visibility = Visibility.Visible;
         ResultPage.Visibility = Visibility.Hidden;
+        RestartAppButton.Visibility = Visibility.Collapsed;
         WorkingProgressRing.IsIndeterminate = true;
         WorkingProgressRing.Visibility = Visibility.Visible;
     }
@@ -135,6 +138,7 @@ public partial class HotkeyProgressPopup : FluentWindow
     {
         LoadingPage.Visibility = Visibility.Hidden;
         ResultPage.Visibility = Visibility.Visible;
+        RestartAppButton.Visibility = Visibility.Collapsed;
 
         ResultStateIcon.Symbol = SymbolRegular.Checkmark24;
         ResultIconBadge.Background = _successBadgeBrush;
@@ -146,10 +150,11 @@ public partial class HotkeyProgressPopup : FluentWindow
         PositionAtBottomRight();
     }
 
-    public void SetErrorState(string subtitle)
+    public void SetErrorState(string subtitle, bool showRestartAction = false)
     {
         LoadingPage.Visibility = Visibility.Hidden;
         ResultPage.Visibility = Visibility.Visible;
+        RestartAppButton.Visibility = showRestartAction ? Visibility.Visible : Visibility.Collapsed;
 
         ResultStateIcon.Symbol = SymbolRegular.ErrorCircle24;
         ResultIconBadge.Background = _errorBadgeBrush;
@@ -346,6 +351,12 @@ public partial class HotkeyProgressPopup : FluentWindow
         e.Handled = true;
         _autoCloseRequested = false;
         CloseSafely();
+    }
+
+    private void RestartAppButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        _autoCloseRequested = false;
+        RestartAppRequested?.Invoke(this, EventArgs.Empty);
     }
 
     private static string NormalizeSingleLine(string? text, int maxLength)

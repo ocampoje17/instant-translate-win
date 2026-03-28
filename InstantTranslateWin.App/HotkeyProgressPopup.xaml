@@ -156,6 +156,14 @@
                                        TextWrapping="NoWrap"
                                        Text="Kết quả" />
                         </ui:Card>
+
+                        <ui:Button x:Name="RestartAppButton"
+                                   Margin="0,8,0,0"
+                                   Appearance="Secondary"
+                                   Visibility="Collapsed"
+                                   Content="Khởi động lại app"
+                                   Icon="{ui:SymbolIcon ArrowClockwise24}"
+                                   Click="RestartAppButton_OnClick" />
                     </StackPanel>
                 </Grid>
             </Grid>
