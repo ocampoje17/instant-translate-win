@@ -30,8 +30,9 @@ public static class SecretProtector
             var plainBytes = ProtectedData.Unprotect(bytes, null, DataProtectionScope.CurrentUser);
             return Encoding.UTF8.GetString(plainBytes);
         }
-        catch
+        catch (Exception ex)
         {
+            ErrorFileLogger.LogException("SecretProtector.Unprotect", ex);
             return string.Empty;
         }
     }

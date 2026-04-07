@@ -83,11 +83,16 @@ public sealed class GeminiTranslationService : IDisposable
             catch (Exception ex) when (attempt < maxAttempts)
             {
                 lastError = ex;
+                ErrorFileLogger.LogMessage(
+                    "GeminiTranslationService.TranslateAsync.Retry",
+                    $"Attempt {attempt}/{maxAttempts} failed: {ex.GetType().Name}: {ex.Message}"
+                );
                 await Task.Delay(TimeSpan.FromMilliseconds(450), cancellationToken);
             }
             catch (Exception ex)
             {
                 lastError = ex;
+                ErrorFileLogger.LogException("GeminiTranslationService.TranslateAsync.FinalAttempt", ex);
             }
         }
 

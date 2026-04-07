@@ -12,6 +12,19 @@ App phù hợp khi bạn cần viết bình luận/chat bằng ngôn ngữ khác
 - Cài đặt gọn, dễ dùng cho người phổ thông
 - API key và dữ liệu lịch sử lưu cục bộ trên máy
 
+## Ghi chú kỹ thuật: fallback capture text
+
+Khi đọc text đang chọn từ app khác, Instant Translate chạy theo chuỗi fallback:
+
+1. `UI Automation` (đọc selection trực tiếp)
+2. `Ctrl + C`
+3. `Ctrl + Insert`
+4. `ScanCode Ctrl + C` (tương thích tốt hơn với một số app Electron)
+5. `WM_COPY` tới cửa sổ foreground
+6. `UI Automation` lần 2
+
+Nếu tất cả đều thất bại, app sẽ ghi chi tiết vào `%LOCALAPPDATA%\\InstantTranslateWin\\runtime-errors.txt`.
+
 ## Tải phiên bản mới nhất
 
 Tải bản cài đặt mới nhất tại đây (đã có cả `x86` và `x64`):

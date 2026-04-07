@@ -16,6 +16,15 @@
             <TextBlock Margin="0,8,0,0"
                        Foreground="{DynamicResource TextFillColorSecondaryBrush}"
                        Text="Cần hỗ trợ nhanh hoặc muốn tải bản mới nhất của app?" />
+            <StackPanel Margin="0,8,0,0"
+                        Orientation="Horizontal"
+                        VerticalAlignment="Center">
+                <ui:SymbolIcon Symbol="Code24" Margin="0,0,6,0" />
+                <TextBlock x:Name="AppVersionTextBlock"
+                           VerticalAlignment="Center"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                           Text="Phiên bản: --" />
+            </StackPanel>
 
             <StackPanel Margin="0,10,0,0"
                         Orientation="Horizontal"

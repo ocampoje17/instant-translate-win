@@ -1,9 +1,9 @@
-using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Threading;
+using InstantTranslateWin.App.Services;
 
 namespace InstantTranslateWin.App;
 
@@ -52,8 +52,9 @@ public partial class App : System.Windows.Application
             _activateEvent?.Set();
             _activateListenerTask?.Wait(TimeSpan.FromSeconds(1));
         }
-        catch
+        catch (Exception ex)
         {
+            LogException("OnExit.SingleInstanceListenerShutdown", ex);
             // Ignore single-instance listener shutdown failures.
         }
         finally
@@ -104,8 +105,9 @@ public partial class App : System.Windows.Application
                     MessageBoxImage.Error
                 );
             }
-            catch
+            catch (Exception ex)
             {
+                LogException("OnDispatcherUnhandledException.ShowMessageBox", ex);
                 // Ignore UI prompt failures.
             }
 
@@ -113,8 +115,9 @@ public partial class App : System.Windows.Application
             {
                 Current?.Shutdown();
             }
-            catch
+            catch (Exception ex)
             {
+                LogException("OnDispatcherUnhandledException.Shutdown", ex);
                 // Ignore shutdown failures.
             }
         }, DispatcherPriority.Send);
@@ -152,8 +155,9 @@ public partial class App : System.Windows.Application
             {
                 Thread.Sleep(100);
             }
-            catch
+            catch (Exception ex)
             {
+                LogException("SignalRunningInstanceToActivate", ex);
                 return;
             }
         }
@@ -217,7 +221,7 @@ public partial class App : System.Windows.Application
 
     private static void LogException(string source, Exception exception)
     {
-        LogRaw(source, exception.ToString());
+        ErrorFileLogger.LogException(source, exception);
     }
 
     private static bool IsRecoverableUiException(Exception ex)
@@ -242,21 +246,6 @@ public partial class App : System.Windows.Application
 
     private static void LogRaw(string source, string message)
     {
-        try
-        {
-            var appDir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "InstantTranslateWin"
-            );
-            Directory.CreateDirectory(appDir);
-
-            var logPath = Path.Combine(appDir, "runtime-errors.log");
-            var line = $"[{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss zzz}] {source}{Environment.NewLine}{message}{Environment.NewLine}{new string('-', 80)}{Environment.NewLine}";
-            File.AppendAllText(logPath, line);
-        }
-        catch
-        {
-            // Never throw from logging path.
-        }
+        ErrorFileLogger.LogMessage(source, message);
     }
 }

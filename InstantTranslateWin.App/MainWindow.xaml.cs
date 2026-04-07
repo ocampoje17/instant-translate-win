@@ -1,11 +1,14 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Navigation;
+using System.Windows.Threading;
 using InstantTranslateWin.App.Models;
 using InstantTranslateWin.App.Services;
 using Wpf.Ui.Appearance;
@@ -18,6 +21,9 @@ namespace InstantTranslateWin.App;
 public partial class MainWindow : FluentWindow
 {
     private const int HotkeyId = 1001;
+    private const string TaskbarCreatedMessageName = "TaskbarCreated";
+    private const int TrayIconHealthCheckSeconds = 30;
+    private const int BackgroundMemoryTrimDelayMs = 300;
     private const string DefaultTargetLanguage = "English";
     private const string ApiProviderGemini = "Gemini";
     private const string ApiProviderLocalAi = "LocalAi";
@@ -69,6 +75,12 @@ public partial class MainWindow : FluentWindow
     private bool _isApplyingSettings;
     private bool _isAutoSavingSettings;
     private bool _isManualTargetLanguageInitialized;
+    private int _taskbarCreatedMessageId;
+    private HwndSource? _windowHwndSource;
+    private readonly DispatcherTimer _trayIconHealthCheckTimer = new()
+    {
+        Interval = TimeSpan.FromSeconds(TrayIconHealthCheckSeconds)
+    };
 
     public ObservableCollection<TranslationRecord> HistoryRecords { get; } = [];
     public ObservableCollection<ApiKeyInputItem> ApiKeyInputItems { get; } = [];
@@ -91,14 +103,95 @@ public partial class MainWindow : FluentWindow
 
     public sealed record ThemeOptionItem(string DisplayName, string ThemeKey);
 
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern int RegisterWindowMessage(string lpString);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool SetProcessWorkingSetSize(
+        IntPtr process,
+        nint minimumWorkingSetSize,
+        nint maximumWorkingSetSize
+    );
+
     public MainWindow()
     {
         InitializeComponent();
         DataContext = this;
 
+        SourceInitialized += OnSourceInitialized;
         Loaded += OnLoaded;
         Closing += OnClosing;
         Closed += OnClosed;
+        _trayIconHealthCheckTimer.Tick += TrayIconHealthCheckTimerOnTick;
+    }
+
+    private void OnSourceInitialized(object? sender, EventArgs e)
+    {
+        // Re-register tray icon when Explorer restarts (TaskbarCreated broadcast).
+        try
+        {
+            _taskbarCreatedMessageId = RegisterWindowMessage(TaskbarCreatedMessageName);
+            _windowHwndSource = PresentationSource.FromVisual(this) as HwndSource;
+            _windowHwndSource?.AddHook(WndProc);
+        }
+        catch (Exception ex)
+        {
+            ErrorFileLogger.LogException("MainWindow.OnSourceInitialized", ex);
+        }
+    }
+
+    private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        if (_taskbarCreatedMessageId != 0 && msg == _taskbarCreatedMessageId)
+        {
+            _ = Dispatcher.BeginInvoke(() =>
+            {
+                ErrorFileLogger.LogMessage(
+                    "MainWindow.WndProc.TaskbarCreated",
+                    "Received TaskbarCreated. Re-registering tray icon."
+                );
+                EnsureTrayIconRegistered("TaskbarCreated");
+            }, DispatcherPriority.Background);
+        }
+
+        return IntPtr.Zero;
+    }
+
+    private void TrayIconHealthCheckTimerOnTick(object? sender, EventArgs e)
+    {
+        if (_isShuttingDown)
+        {
+            return;
+        }
+
+        if (KeepRunningInBackgroundOnCloseCheckBox.IsChecked == true || !IsVisible)
+        {
+            EnsureTrayIconRegistered("PeriodicHealthCheck");
+        }
+    }
+
+    private void EnsureTrayIconRegistered(string source)
+    {
+        try
+        {
+            if (!AppNotifyIcon.IsRegistered)
+            {
+                AppNotifyIcon.Register();
+                ErrorFileLogger.LogMessage($"MainWindow.TrayIcon.{source}", "Tray icon was not registered and has been restored.");
+            }
+        }
+        catch (Exception ex)
+        {
+            ErrorFileLogger.LogException($"MainWindow.TrayIcon.{source}", ex);
+        }
+    }
+
+    private void StartTrayIconHealthMonitor()
+    {
+        if (!_trayIconHealthCheckTimer.IsEnabled)
+        {
+            _trayIconHealthCheckTimer.Start();
+        }
     }
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
@@ -121,8 +214,9 @@ public partial class MainWindow : FluentWindow
                 migrated = true;
             }
         }
-        catch
+        catch (Exception ex)
         {
+            ErrorFileLogger.LogException("MainWindow.OnLoaded.StartupRegistrationRead", ex);
             // Ignore startup key read issues; UI will keep persisted state.
         }
 
@@ -135,7 +229,8 @@ public partial class MainWindow : FluentWindow
             HistoryRecords.Add(record);
         }
 
-        AppNotifyIcon.Register();
+        EnsureTrayIconRegistered("OnLoaded");
+        StartTrayIconHealthMonitor();
 
         _isHotkeyRegistered = TryRegisterHotkey(_state.Settings, out var error);
         if (!_isHotkeyRegistered)
@@ -181,6 +276,8 @@ public partial class MainWindow : FluentWindow
             e.Cancel = true;
             Hide();
             ShowInTaskbar = false;
+            EnsureTrayIconRegistered("OnClosingBackground");
+            _ = TrimMemoryForBackgroundAsync();
             _ = PersistSettingsOnCloseAsync();
             return;
         }
@@ -192,6 +289,12 @@ public partial class MainWindow : FluentWindow
     private async void OnClosed(object? sender, EventArgs e)
     {
         _isShuttingDown = true;
+        _trayIconHealthCheckTimer.Stop();
+        if (_windowHwndSource is not null)
+        {
+            _windowHwndSource.RemoveHook(WndProc);
+            _windowHwndSource = null;
+        }
 
         Task manualTaskToAwait;
         lock (_manualTranslationLock)
@@ -218,8 +321,9 @@ public partial class MainWindow : FluentWindow
                 {
                     _hotkeyPopup.Close();
                 }
-                catch
+                catch (Exception ex)
                 {
+                    ErrorFileLogger.LogException("MainWindow.OnClosed.HotkeyPopupClose", ex);
                     // Ignore popup close failures during app shutdown.
                 }
             }
@@ -235,8 +339,9 @@ public partial class MainWindow : FluentWindow
             {
                 // Ignore cancellation during app shutdown.
             }
-            catch
+            catch (Exception ex)
             {
+                ErrorFileLogger.LogException("MainWindow.OnClosed.ManualTaskAwait", ex);
                 // Ignore background failures during app shutdown.
             }
 
@@ -374,18 +479,52 @@ public partial class MainWindow : FluentWindow
 
     private void RestoreWindowFromTray()
     {
+        EnsureTrayIconRegistered("RestoreWindowFromTray");
         ShowInTaskbar = true;
         Show();
         WindowState = WindowState.Normal;
         Activate();
     }
 
-    private HotkeyProgressPopup? ShowHotkeyProgressPopup()
+    private async Task TrimMemoryForBackgroundAsync()
     {
+        try
+        {
+            await Task.Delay(BackgroundMemoryTrimDelayMs);
+            if (_isShuttingDown)
+            {
+                return;
+            }
+
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+
+            using var process = Process.GetCurrentProcess();
+            _ = SetProcessWorkingSetSize(process.Handle, (nint)(-1), (nint)(-1));
+            ErrorFileLogger.LogMessage(
+                "MainWindow.TrimMemoryForBackgroundAsync",
+                "Triggered GC and working-set trim after minimizing to tray."
+            );
+        }
+        catch (Exception ex)
+        {
+            ErrorFileLogger.LogException("MainWindow.TrimMemoryForBackgroundAsync", ex);
+        }
+    }
+
+    private HotkeyProgressPopup? ShowHotkeyProgressPopup(
+        bool resetProgress = true,
+        string title = "Đang xử lý hotkey...",
+        string subtitle = ""
+    )
+    {
+        var createdNew = false;
         if (_hotkeyPopup is null)
         {
             _hotkeyPopup = new HotkeyProgressPopup();
             _hotkeyPopup.RestartAppRequested += HotkeyPopupOnRestartAppRequested;
+            createdNew = true;
         }
 
         if (!TryShowHotkeyPopup(_hotkeyPopup))
@@ -394,13 +533,15 @@ public partial class MainWindow : FluentWindow
             {
                 _hotkeyPopup.Close();
             }
-            catch
+            catch (Exception ex)
             {
+                ErrorFileLogger.LogException("MainWindow.ShowHotkeyProgressPopup.CloseAndRecreate", ex);
                 // Ignore close failure and recreate popup below.
             }
 
             _hotkeyPopup = new HotkeyProgressPopup();
             _hotkeyPopup.RestartAppRequested += HotkeyPopupOnRestartAppRequested;
+            createdNew = true;
             if (!TryShowHotkeyPopup(_hotkeyPopup))
             {
                 _hotkeyPopup = null;
@@ -409,7 +550,11 @@ public partial class MainWindow : FluentWindow
             }
         }
 
-        _hotkeyPopup.BeginProgress("Đang xử lý hotkey...", string.Empty);
+        if (resetProgress || createdNew)
+        {
+            _hotkeyPopup.BeginProgress(title, subtitle);
+        }
+
         return _hotkeyPopup;
     }
 
@@ -437,6 +582,7 @@ public partial class MainWindow : FluentWindow
         }
         catch (Exception ex)
         {
+            ErrorFileLogger.LogException("MainWindow.HotkeyPopupOnRestartAppRequested", ex);
             ShowStatus("Không thể khởi động lại app", ex.Message, InfoBarSeverity.Error);
         }
     }
@@ -448,8 +594,16 @@ public partial class MainWindow : FluentWindow
             popup.ShowAtBottomRight();
             return true;
         }
-        catch
+        catch (InvalidOperationException ex) when (
+            ex.Message.Contains("after a Window has closed", StringComparison.OrdinalIgnoreCase)
+        )
         {
+            // Expected when trying to reuse an already-closed popup instance.
+            return false;
+        }
+        catch (Exception ex)
+        {
+            ErrorFileLogger.LogException("MainWindow.TryShowHotkeyPopup", ex);
             return false;
         }
     }
@@ -496,6 +650,8 @@ public partial class MainWindow : FluentWindow
 
     private async Task TranslateSelectedTextFromForegroundAsync()
     {
+        HotkeyProgressPopup? popup = null;
+
         try
         {
             var settings = BuildSettingsFromUi(includeApiKey: false);
@@ -512,15 +668,33 @@ public partial class MainWindow : FluentWindow
                 return;
             }
 
-            var selectedText = await _captureService.CaptureSelectedTextAsync();
+            popup = ShowHotkeyProgressPopup(
+                resetProgress: true,
+                title: "Đang đọc text đang chọn...",
+                subtitle: string.Empty
+            );
+            popup?.AddStep("Đang lấy text từ ứng dụng hiện tại...");
+
+            var selectedText = await _captureService.CaptureSelectedTextAsync(
+                step =>
+                {
+                    popup?.AddStep(step);
+                }
+            );
 
             if (string.IsNullOrWhiteSpace(selectedText))
             {
-                var popup = ShowHotkeyProgressPopup();
+                ErrorFileLogger.LogMessage(
+                    "MainWindow.TranslateSelectedTextFromForegroundAsync.EmptySelection",
+                    "Không đọc được text đang chọn từ ứng dụng hiện tại. Đây là lỗi theo luồng xử lý, không có exception stack trace."
+                );
+
                 if (popup is not null)
                 {
                     popup.AddStep("Không thể đọc text đang chọn.");
                     popup.SetErrorState("Hãy chọn lại đoạn văn bản rồi thử lại. Nếu vẫn lỗi, hãy khởi động lại app.", showRestartAction: true);
+                    // Popup lỗi: giữ lâu hơn để user kịp đọc và bấm hành động.
+                    popup.ScheduleClose(TimeSpan.FromSeconds(10));
                 }
 
                 ShowStatus(
@@ -536,6 +710,15 @@ public partial class MainWindow : FluentWindow
         }
         catch (Exception ex)
         {
+            ErrorFileLogger.LogException("MainWindow.TranslateSelectedTextFromForegroundAsync", ex);
+            if (popup is not null)
+            {
+                popup.AddStep("Xảy ra lỗi trong quá trình đọc text.");
+                popup.SetErrorState(ex.Message, showRestartAction: true);
+                // Popup lỗi: tự tắt sau 10s, có reset timer nếu hover.
+                popup.ScheduleClose(TimeSpan.FromSeconds(10));
+            }
+
             ShowStatus("Lỗi dịch", ex.Message, InfoBarSeverity.Error);
         }
     }
@@ -570,6 +753,7 @@ public partial class MainWindow : FluentWindow
         }
         catch (Exception ex)
         {
+            ErrorFileLogger.LogException("MainWindow.TranslateManualButton_Click", ex);
             ShowStatus("Lỗi dịch", ex.Message, InfoBarSeverity.Error);
         }
     }
@@ -690,6 +874,7 @@ public partial class MainWindow : FluentWindow
                 return;
             }
 
+            ErrorFileLogger.LogException("MainWindow.ProcessManualTranslationAsync", ex);
             UpdateManualTranslationProgress("Xảy ra lỗi trong quá trình dịch thủ công.", 100);
             ShowStatus("Lỗi dịch thủ công", ex.Message, InfoBarSeverity.Error);
         }
@@ -829,7 +1014,7 @@ public partial class MainWindow : FluentWindow
         try
         {
             BeginMainTranslationProgress("Đang chuẩn bị dịch từ hotkey...", 10);
-            popup = ShowHotkeyProgressPopup();
+            popup = ShowHotkeyProgressPopup(resetProgress: false);
             popup?.AddStep("Đã nhận tác vụ dịch.");
             popup?.SetSourcePreview(request.SourceText);
             popup?.SetProgressState($"Đang dịch với {GetProviderDisplayName(request.Settings.ActiveApiProvider)}...", 55);
@@ -861,6 +1046,7 @@ public partial class MainWindow : FluentWindow
                 $"Ngôn ngữ đích: {GetTargetLanguageDisplayName(request.Settings.TargetLanguage)}",
                 translation
             );
+            // Popup thành công: tự tắt nhanh để không che nội dung làm việc.
             popup?.ScheduleClose(TimeSpan.FromSeconds(3));
 
             ShowStatus(
@@ -875,11 +1061,13 @@ public partial class MainWindow : FluentWindow
         }
         catch (Exception ex)
         {
+            ErrorFileLogger.LogException("MainWindow.ProcessSingleTranslationRequestAsync", ex);
             if (popup is not null)
             {
                 popup.AddStep("Xảy ra lỗi trong quá trình dịch.");
                 popup.SetErrorState(ex.Message, showRestartAction: false);
-                popup.ScheduleClose(TimeSpan.FromSeconds(3));
+                // Popup lỗi: auto-close sau 10s.
+                popup.ScheduleClose(TimeSpan.FromSeconds(10));
             }
 
             UpdateMainTranslationProgress("Xảy ra lỗi trong quá trình dịch.", 100);
@@ -903,8 +1091,9 @@ public partial class MainWindow : FluentWindow
             _state.Settings = BuildSettingsFromUi(includeApiKey: false);
             await PersistStateAsync();
         }
-        catch
+        catch (Exception ex)
         {
+            ErrorFileLogger.LogException("MainWindow.PersistSettingsOnCloseAsync", ex);
             // Ignore close-time settings persistence failures.
         }
     }
@@ -1183,6 +1372,7 @@ public partial class MainWindow : FluentWindow
             }
             catch (Exception ex)
             {
+                ErrorFileLogger.LogException("MainWindow.AutoSaveNonApiSettingsAsync.StartupRegistration", ex);
                 _isHotkeyRegistered = TryRegisterHotkey(previousSettings, out _);
                 ApplySettingsToUi(previousSettings, includeApiKey: false);
                 ShowStatus("Không áp dụng được startup", ex.Message, InfoBarSeverity.Error);
@@ -1195,6 +1385,7 @@ public partial class MainWindow : FluentWindow
             }
             catch (Exception ex)
             {
+                ErrorFileLogger.LogException("MainWindow.AutoSaveNonApiSettingsAsync.ApplyTheme", ex);
                 _isHotkeyRegistered = TryRegisterHotkey(previousSettings, out _);
                 ApplyTheme(previousSettings.AppTheme);
                 ApplySettingsToUi(previousSettings, includeApiKey: false);
@@ -1239,6 +1430,7 @@ public partial class MainWindow : FluentWindow
         }
         catch (Exception ex)
         {
+            ErrorFileLogger.LogException("MainWindow.SaveApiKeyButton_Click", ex);
             ShowStatus("Không lưu được API key", ex.Message, InfoBarSeverity.Error);
         }
     }
@@ -1282,6 +1474,7 @@ public partial class MainWindow : FluentWindow
         }
         catch (Exception ex)
         {
+            ErrorFileLogger.LogException("MainWindow.SaveLocalAiButton_Click", ex);
             ShowStatus("Không lưu được OpenAI-compatible", ex.Message, InfoBarSeverity.Error);
         }
     }
@@ -1337,6 +1530,7 @@ public partial class MainWindow : FluentWindow
         }
         catch (Exception ex)
         {
+            ErrorFileLogger.LogException("MainWindow.TestLocalAiButton_Click", ex);
             ShowStatus("Test OpenAI-compatible thất bại", ex.Message, InfoBarSeverity.Error);
         }
         finally
@@ -1400,6 +1594,7 @@ public partial class MainWindow : FluentWindow
         }
         catch (Exception ex)
         {
+            ErrorFileLogger.LogException("MainWindow.TestApiKeyRowButton_Click", ex);
             ShowStatus("Test thất bại", ex.Message, InfoBarSeverity.Error);
         }
         finally
@@ -1665,8 +1860,9 @@ public partial class MainWindow : FluentWindow
 
             _ = presenter.ImmediatelyDisplay(snackbar);
         }
-        catch
+        catch (Exception ex)
         {
+            ErrorFileLogger.LogException("MainWindow.ShowMissingApiKeySnackbar", ex);
             ShowStatus(
                 "Chưa thiết lập API key",
                 $"{message} Vào tab Cài đặt để thêm API key.",
@@ -2082,6 +2278,7 @@ public partial class MainWindow : FluentWindow
         }
         catch (Exception ex)
         {
+            ErrorFileLogger.LogException("MainWindow.GeminiApiKeyLink_OnRequestNavigate", ex);
             ShowStatus("Không mở được liên kết", ex.Message, InfoBarSeverity.Warning);
         }
     }

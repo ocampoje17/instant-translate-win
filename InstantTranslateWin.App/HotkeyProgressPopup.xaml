@@ -157,13 +157,24 @@
                                        Text="Kết quả" />
                         </ui:Card>
 
-                        <ui:Button x:Name="RestartAppButton"
-                                   Margin="0,8,0,0"
-                                   Appearance="Secondary"
-                                   Visibility="Collapsed"
-                                   Content="Khởi động lại app"
-                                   Icon="{ui:SymbolIcon ArrowClockwise24}"
-                                   Click="RestartAppButton_OnClick" />
+                        <StackPanel x:Name="ResultActionsPanel"
+                                    Margin="0,8,0,0"
+                                    Orientation="Horizontal"
+                                    Visibility="Collapsed">
+                            <ui:Button x:Name="RestartAppButton"
+                                       Appearance="Secondary"
+                                       Visibility="Collapsed"
+                                       Content="Khởi động lại app"
+                                       Icon="{ui:SymbolIcon ArrowClockwise24}"
+                                       Click="RestartAppButton_OnClick" />
+                            <ui:Button x:Name="OpenLogFileButton"
+                                       Margin="8,0,0,0"
+                                       Appearance="Secondary"
+                                       Visibility="Collapsed"
+                                       Content="Mở log file"
+                                       Icon="{ui:SymbolIcon Document24}"
+                                       Click="OpenLogFileButton_OnClick" />
+                        </StackPanel>
                     </StackPanel>
                 </Grid>
             </Grid>

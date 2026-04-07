@@ -1,8 +1,11 @@
+using System.Diagnostics;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using InstantTranslateWin.App.Services;
 using Wpf.Ui.Controls;
 
 namespace InstantTranslateWin.App;
@@ -11,12 +14,12 @@ public partial class HotkeyProgressPopup : FluentWindow
 {
     public event EventHandler? RestartAppRequested;
 
-    private static readonly TimeSpan HoverCloseDelay = TimeSpan.FromSeconds(3);
     private const uint MonitorDefaultToNearest = 0x00000002;
 
     private CancellationTokenSource? _closeCts;
     private bool _isPointerHovering;
     private bool _autoCloseRequested;
+    private TimeSpan _scheduledCloseDelay = TimeSpan.FromSeconds(3);
 
     private readonly SolidColorBrush _successBadgeBrush = new(Color.FromRgb(54, 158, 94));
     private readonly SolidColorBrush _errorBadgeBrush = new(Color.FromRgb(216, 76, 76));
@@ -78,8 +81,9 @@ public partial class HotkeyProgressPopup : FluentWindow
         {
             PositionAtBottomRight();
         }
-        catch
+        catch (Exception ex)
         {
+            ErrorFileLogger.LogException("HotkeyProgressPopup.ShowAtBottomRight.PositionFallback", ex);
             // Fallback to default location if measuring/positioning fails.
             var workArea = SystemParameters.WorkArea;
             var width = ActualWidth > 0 ? ActualWidth : Width;
@@ -110,7 +114,9 @@ public partial class HotkeyProgressPopup : FluentWindow
 
         LoadingPage.Visibility = Visibility.Visible;
         ResultPage.Visibility = Visibility.Hidden;
+        ResultActionsPanel.Visibility = Visibility.Collapsed;
         RestartAppButton.Visibility = Visibility.Collapsed;
+        OpenLogFileButton.Visibility = Visibility.Collapsed;
         WorkingProgressRing.IsIndeterminate = true;
         WorkingProgressRing.Visibility = Visibility.Visible;
     }
@@ -138,7 +144,9 @@ public partial class HotkeyProgressPopup : FluentWindow
     {
         LoadingPage.Visibility = Visibility.Hidden;
         ResultPage.Visibility = Visibility.Visible;
+        ResultActionsPanel.Visibility = Visibility.Collapsed;
         RestartAppButton.Visibility = Visibility.Collapsed;
+        OpenLogFileButton.Visibility = Visibility.Collapsed;
 
         ResultStateIcon.Symbol = SymbolRegular.Checkmark24;
         ResultIconBadge.Background = _successBadgeBrush;
@@ -154,7 +162,9 @@ public partial class HotkeyProgressPopup : FluentWindow
     {
         LoadingPage.Visibility = Visibility.Hidden;
         ResultPage.Visibility = Visibility.Visible;
+        ResultActionsPanel.Visibility = Visibility.Visible;
         RestartAppButton.Visibility = showRestartAction ? Visibility.Visible : Visibility.Collapsed;
+        OpenLogFileButton.Visibility = Visibility.Visible;
 
         ResultStateIcon.Symbol = SymbolRegular.ErrorCircle24;
         ResultIconBadge.Background = _errorBadgeBrush;
@@ -168,6 +178,8 @@ public partial class HotkeyProgressPopup : FluentWindow
 
     public void ScheduleClose(TimeSpan delay)
     {
+        // Ghi nhớ delay gốc (3s success / 10s error) để khi hover-out sẽ đếm lại đúng từ đầu.
+        _scheduledCloseDelay = delay < TimeSpan.Zero ? TimeSpan.Zero : delay;
         _autoCloseRequested = true;
         if (_isPointerHovering)
         {
@@ -175,7 +187,7 @@ public partial class HotkeyProgressPopup : FluentWindow
             return;
         }
 
-        StartCloseCountdown(delay);
+        StartCloseCountdown(_scheduledCloseDelay);
     }
 
     private void ShellBorder_OnMouseEnter(object sender, MouseEventArgs e)
@@ -192,7 +204,8 @@ public partial class HotkeyProgressPopup : FluentWindow
         _isPointerHovering = false;
         if (_autoCloseRequested)
         {
-            StartCloseCountdown(HoverCloseDelay);
+            // Hover xong rời chuột: reset countdown từ đầu theo delay đã lên lịch.
+            StartCloseCountdown(_scheduledCloseDelay);
         }
     }
 
@@ -359,6 +372,37 @@ public partial class HotkeyProgressPopup : FluentWindow
         RestartAppRequested?.Invoke(this, EventArgs.Empty);
     }
 
+    private void OpenLogFileButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        _autoCloseRequested = false;
+
+        try
+        {
+            var logPath = ErrorFileLogger.GetTextLogPath();
+            if (!File.Exists(logPath))
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(logPath)!);
+                File.WriteAllText(logPath, string.Empty);
+            }
+
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = logPath,
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            ErrorFileLogger.LogException("HotkeyProgressPopup.OpenLogFileButton_OnClick", ex);
+            System.Windows.MessageBox.Show(
+                $"Không mở được log file: {ex.Message}",
+                "Instant Translate",
+                System.Windows.MessageBoxButton.OK,
+                System.Windows.MessageBoxImage.Warning
+            );
+        }
+    }
+
     private static string NormalizeSingleLine(string? text, int maxLength)
     {
         if (string.IsNullOrWhiteSpace(text))
@@ -448,8 +492,9 @@ public partial class HotkeyProgressPopup : FluentWindow
         {
             Close();
         }
-        catch
+        catch (Exception ex)
         {
+            ErrorFileLogger.LogException("HotkeyProgressPopup.CloseSafely", ex);
             // Ignore close failures for non-critical popup.
         }
     }

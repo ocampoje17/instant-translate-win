@@ -1,6 +1,6 @@
 param(
     [string]$Configuration = "Release",
-    [string]$Version = "1.0.2"
+    [string]$Version = "1.0.3"
 )
 
 Set-StrictMode -Version Latest
