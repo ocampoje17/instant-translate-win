@@ -8,6 +8,7 @@ public sealed class GlobalKeyboardHookService : IDisposable
     private const int WhKeyboardLl = 13;
     private const int WmKeyDown = 0x0100;
     private const int WmSysKeyDown = 0x0104;
+    private const uint LlkhfInjected = 0x10;
     private const int VirtualKeyLeftControl = 0xA2;
     private const int VirtualKeyRightControl = 0xA3;
     private const int VirtualKeyLeftShift = 0xA0;
@@ -118,6 +119,7 @@ public sealed class GlobalKeyboardHookService : IDisposable
             IsKeyDown(VirtualKeyLeftShift) || IsKeyDown(VirtualKeyRightShift),
             IsKeyDown(VirtualKeyLeftMenu) || IsKeyDown(VirtualKeyRightMenu),
             IsKeyDown(VirtualKeyLeftWindows) || IsKeyDown(VirtualKeyRightWindows),
+            (hookData.Flags & LlkhfInjected) != 0,
             text
         );
     }
@@ -155,6 +157,7 @@ public sealed class GlobalKeyPressedEventArgs : EventArgs
     public bool IsShiftDown { get; }
     public bool IsAltDown { get; }
     public bool IsWindowsDown { get; }
+    public bool IsInjected { get; }
     public string? TypedText { get; }
 
     public GlobalKeyPressedEventArgs(
@@ -163,6 +166,7 @@ public sealed class GlobalKeyPressedEventArgs : EventArgs
         bool isShiftDown,
         bool isAltDown,
         bool isWindowsDown,
+        bool isInjected,
         string? typedText
     )
     {
@@ -171,6 +175,7 @@ public sealed class GlobalKeyPressedEventArgs : EventArgs
         IsShiftDown = isShiftDown;
         IsAltDown = isAltDown;
         IsWindowsDown = isWindowsDown;
+        IsInjected = isInjected;
         TypedText = typedText;
     }
 }

@@ -1,8 +1,11 @@
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
+using InstantTranslateWin.App.Models;
 using Wpf.Ui.Controls;
 
 namespace InstantTranslateWin.App;
@@ -14,8 +17,10 @@ public partial class QuickInputPopup : FluentWindow
     private const double CursorGap = 32;
 
     private bool _allowClose;
+    private bool _isApplyingInputOptions;
 
     public event EventHandler<string>? SubmitRequested;
+    public event EventHandler<QuickInputPopupSettingsChangedEventArgs>? InputOptionsChanged;
 
     public bool IsInputFocused => InputTextBox.IsKeyboardFocusWithin;
     public string CurrentText => InputTextBox.Text ?? string.Empty;
@@ -59,6 +64,10 @@ public partial class QuickInputPopup : FluentWindow
     public QuickInputPopup()
     {
         InitializeComponent();
+        ApplyInputOptions(
+            QuickInputTypingOptions.InputLanguageVietnamese,
+            QuickInputTypingOptions.VietnameseTypingStyleTelex
+        );
     }
 
     public void ShowNearCursor(bool clearText = true)
@@ -89,6 +98,24 @@ public partial class QuickInputPopup : FluentWindow
     {
         _allowClose = true;
         Close();
+    }
+
+    public void ApplyInputOptions(string inputLanguage, string vietnameseTypingStyle)
+    {
+        _isApplyingInputOptions = true;
+        try
+        {
+            var normalizedInputLanguage = NormalizeInputLanguage(inputLanguage);
+            var normalizedTypingStyle = NormalizeVietnameseTypingStyle(vietnameseTypingStyle);
+
+            SetComboBoxSelectedByTag(InputLanguageComboBox, normalizedInputLanguage);
+            SetComboBoxSelectedByTag(VietnameseTypingStyleComboBox, normalizedTypingStyle);
+            UpdateVietnameseTypingPanelVisibility(normalizedInputLanguage);
+        }
+        finally
+        {
+            _isApplyingInputOptions = false;
+        }
     }
 
     public void InsertMirroredText(string text)
@@ -179,6 +206,11 @@ public partial class QuickInputPopup : FluentWindow
         InputTextBox.Select(end, 0);
     }
 
+    public void SelectAllMirroredText()
+    {
+        InputTextBox.SelectAll();
+    }
+
     public void SubmitFromMirroredInput()
     {
         SubmitInput();
@@ -203,6 +235,38 @@ public partial class QuickInputPopup : FluentWindow
     private void CloseButton_OnClick(object sender, RoutedEventArgs e)
     {
         HidePopup();
+    }
+
+    private void InputSettingsButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        var isVisible = InputSettingsPanel.Visibility == Visibility.Visible;
+        InputSettingsPanel.Visibility = isVisible ? Visibility.Collapsed : Visibility.Visible;
+        InputSettingsButton.Appearance = isVisible ? ControlAppearance.Secondary : ControlAppearance.Primary;
+    }
+
+    private void InputLanguageComboBox_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_isApplyingInputOptions)
+        {
+            return;
+        }
+
+        var inputLanguage = GetSelectedComboTag(
+            InputLanguageComboBox,
+            QuickInputTypingOptions.InputLanguageVietnamese
+        );
+        UpdateVietnameseTypingPanelVisibility(inputLanguage);
+        RaiseInputOptionsChanged();
+    }
+
+    private void VietnameseTypingStyleComboBox_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_isApplyingInputOptions)
+        {
+            return;
+        }
+
+        RaiseInputOptionsChanged();
     }
 
     private void InputTextBox_OnPreviewKeyDown(object sender, KeyEventArgs e)
@@ -238,6 +302,15 @@ public partial class QuickInputPopup : FluentWindow
         if (e.LeftButton != MouseButtonState.Pressed)
         {
             return;
+        }
+
+        if (e.OriginalSource is DependencyObject source)
+        {
+            if (FindVisualParent<ButtonBase>(source) is not null ||
+                FindVisualParent<ComboBox>(source) is not null)
+            {
+                return;
+            }
         }
 
         try
@@ -280,6 +353,97 @@ public partial class QuickInputPopup : FluentWindow
         InputTextBox.Text = text;
         var safeCaret = Math.Clamp(caretIndex, 0, text.Length);
         InputTextBox.Select(safeCaret, 0);
+    }
+
+    private void RaiseInputOptionsChanged()
+    {
+        var inputLanguage = NormalizeInputLanguage(
+            GetSelectedComboTag(InputLanguageComboBox, QuickInputTypingOptions.InputLanguageVietnamese)
+        );
+        var typingStyle = NormalizeVietnameseTypingStyle(
+            GetSelectedComboTag(VietnameseTypingStyleComboBox, QuickInputTypingOptions.VietnameseTypingStyleTelex)
+        );
+        InputOptionsChanged?.Invoke(this, new QuickInputPopupSettingsChangedEventArgs(inputLanguage, typingStyle));
+    }
+
+    private static string GetSelectedComboTag(ComboBox comboBox, string fallback)
+    {
+        if (comboBox.SelectedItem is ComboBoxItem item && item.Tag is string tag && !string.IsNullOrWhiteSpace(tag))
+        {
+            return tag;
+        }
+
+        return fallback;
+    }
+
+    private static void SetComboBoxSelectedByTag(ComboBox comboBox, string tag)
+    {
+        for (var index = 0; index < comboBox.Items.Count; index++)
+        {
+            if (comboBox.Items[index] is ComboBoxItem item &&
+                item.Tag is string value &&
+                string.Equals(value, tag, StringComparison.OrdinalIgnoreCase))
+            {
+                comboBox.SelectedIndex = index;
+                return;
+            }
+        }
+    }
+
+    private void UpdateVietnameseTypingPanelVisibility(string inputLanguage)
+    {
+        VietnameseTypingStylePanel.Visibility = string.Equals(
+            NormalizeInputLanguage(inputLanguage),
+            QuickInputTypingOptions.InputLanguageVietnamese,
+            StringComparison.Ordinal
+        )
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+    }
+
+    private static string NormalizeInputLanguage(string? inputLanguage)
+    {
+        return string.Equals(inputLanguage, QuickInputTypingOptions.InputLanguageOther, StringComparison.OrdinalIgnoreCase)
+            ? QuickInputTypingOptions.InputLanguageOther
+            : QuickInputTypingOptions.InputLanguageVietnamese;
+    }
+
+    private static string NormalizeVietnameseTypingStyle(string? typingStyle)
+    {
+        if (
+            string.Equals(
+                typingStyle,
+                QuickInputTypingOptions.VietnameseTypingStyleViqr,
+                StringComparison.OrdinalIgnoreCase
+            )
+        )
+        {
+            return QuickInputTypingOptions.VietnameseTypingStyleViqr;
+        }
+
+        return string.Equals(
+            typingStyle,
+            QuickInputTypingOptions.VietnameseTypingStyleVni,
+            StringComparison.OrdinalIgnoreCase
+        )
+            ? QuickInputTypingOptions.VietnameseTypingStyleVni
+            : QuickInputTypingOptions.VietnameseTypingStyleTelex;
+    }
+
+    private static T? FindVisualParent<T>(DependencyObject source) where T : DependencyObject
+    {
+        var current = source;
+        while (current is not null)
+        {
+            if (current is T match)
+            {
+                return match;
+            }
+
+            current = VisualTreeHelper.GetParent(current);
+        }
+
+        return null;
     }
 
     private void PositionNearCursor()
@@ -369,5 +533,17 @@ public partial class QuickInputPopup : FluentWindow
         }
 
         return height;
+    }
+}
+
+public sealed class QuickInputPopupSettingsChangedEventArgs : EventArgs
+{
+    public string InputLanguage { get; }
+    public string VietnameseTypingStyle { get; }
+
+    public QuickInputPopupSettingsChangedEventArgs(string inputLanguage, string vietnameseTypingStyle)
+    {
+        InputLanguage = inputLanguage;
+        VietnameseTypingStyle = vietnameseTypingStyle;
     }
 }

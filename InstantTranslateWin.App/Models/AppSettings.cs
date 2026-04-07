@@ -47,4 +47,8 @@ public sealed class AppSettings
     public bool QuickInputHotkeyWin { get; set; }
 
     public string QuickInputHotkeyKey { get; set; } = "H";
+
+    public string QuickInputInputLanguage { get; set; } = QuickInputTypingOptions.InputLanguageVietnamese;
+
+    public string QuickInputVietnameseTypingStyle { get; set; } = QuickInputTypingOptions.VietnameseTypingStyleTelex;
 }

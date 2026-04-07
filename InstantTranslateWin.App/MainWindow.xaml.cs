@@ -43,7 +43,16 @@ public partial class MainWindow : FluentWindow
     private const int VirtualKeyInsert = 0x2D;
     private const int VirtualKeyDelete = 0x2E;
     private const int VirtualKeyV = 0x56;
+    private const int VirtualKeyNumber0 = 0x30;
+    private const int VirtualKeyNumber9 = 0x39;
+    private const int VirtualKeyA = 0x41;
+    private const int VirtualKeyZ = 0x5A;
+    private const int VirtualKeyNumpad0 = 0x60;
+    private const int VirtualKeyNumpad9 = 0x69;
+    private const int VirtualKeyProcessKey = 0xE5;
     private const int MaxMirroredInputLength = 20000;
+    private const int MirrorRefreshFastDelayMs = 8;
+    private const int MirrorRefreshImeDelayMs = 26;
     private static readonly string[] DefaultModels = ["gemini-flash-lite-latest", "gemini-2.0-flash-lite"];
     private static readonly string[] HotkeyKeys = BuildHotkeyKeys();
     private static readonly LanguageOption[] SupportedLanguages =
@@ -661,6 +670,11 @@ public partial class MainWindow : FluentWindow
 
         _quickInputPopup = new QuickInputPopup();
         _quickInputPopup.SubmitRequested += QuickInputPopupOnSubmitRequested;
+        _quickInputPopup.InputOptionsChanged += QuickInputPopupOnInputOptionsChanged;
+        _quickInputPopup.ApplyInputOptions(
+            _state.Settings.QuickInputInputLanguage,
+            _state.Settings.QuickInputVietnameseTypingStyle
+        );
         return _quickInputPopup;
     }
 
@@ -698,6 +712,11 @@ public partial class MainWindow : FluentWindow
 
         _quickInputPopup = new QuickInputPopup();
         _quickInputPopup.SubmitRequested += QuickInputPopupOnSubmitRequested;
+        _quickInputPopup.InputOptionsChanged += QuickInputPopupOnInputOptionsChanged;
+        _quickInputPopup.ApplyInputOptions(
+            _state.Settings.QuickInputInputLanguage,
+            _state.Settings.QuickInputVietnameseTypingStyle
+        );
         if (TryShowQuickInputPopup(_quickInputPopup, clearText))
         {
             CaptureQuickInputMirrorBaseline();
@@ -717,6 +736,31 @@ public partial class MainWindow : FluentWindow
     private async void QuickInputPopupOnSubmitRequested(object? sender, string input)
     {
         await TranslateFromQuickInputPopupAsync(input);
+    }
+
+    private async void QuickInputPopupOnInputOptionsChanged(object? sender, QuickInputPopupSettingsChangedEventArgs e)
+    {
+        try
+        {
+            var normalizedInputLanguage = NormalizeQuickInputInputLanguage(e.InputLanguage);
+            var normalizedTypingStyle = NormalizeQuickInputVietnameseTypingStyle(e.VietnameseTypingStyle);
+
+            if (
+                string.Equals(_state.Settings.QuickInputInputLanguage, normalizedInputLanguage, StringComparison.Ordinal) &&
+                string.Equals(_state.Settings.QuickInputVietnameseTypingStyle, normalizedTypingStyle, StringComparison.Ordinal)
+            )
+            {
+                return;
+            }
+
+            _state.Settings.QuickInputInputLanguage = normalizedInputLanguage;
+            _state.Settings.QuickInputVietnameseTypingStyle = normalizedTypingStyle;
+            await PersistStateAsync();
+        }
+        catch (Exception ex)
+        {
+            ErrorFileLogger.LogException("MainWindow.QuickInputPopupOnInputOptionsChanged", ex);
+        }
     }
 
     private static bool TryShowQuickInputPopup(QuickInputPopup popup, bool clearText)
@@ -791,7 +835,7 @@ public partial class MainWindow : FluentWindow
     {
         if (_quickInputPopup is { IsVisible: true } popup)
         {
-            popup.SubmitFromMirroredInput();
+            await TranslateFromQuickInputPopupAsync(popup.CurrentText);
             return;
         }
 
@@ -867,20 +911,44 @@ public partial class MainWindow : FluentWindow
             return;
         }
 
-        if (TrySyncMirrorFromFocusedElement(popup))
+        var isVietnameseInputMode = IsVietnameseQuickInputMode();
+        if (e.VirtualKeyCode == VirtualKeyProcessKey)
         {
-            QueueQuickInputFocusedMirrorRefresh();
+            // IME composition key: prefer delayed focused-text snapshot refresh.
+            QueueQuickInputFocusedMirrorRefresh(allowShrink: true);
+            return;
+        }
+
+        if (TrySyncMirrorFromFocusedElement(popup, allowShrink: isVietnameseInputMode, out var hasFocusedSnapshot))
+        {
+            QueueQuickInputFocusedMirrorRefresh(allowShrink: isVietnameseInputMode);
+            return;
+        }
+
+        if (isVietnameseInputMode && e.IsInjected)
+        {
+            // Let physical keys drive local Vietnamese fallback.
+            // IME helper/injected events are noisy and can erase or duplicate accents.
+            QueueQuickInputFocusedMirrorRefresh(allowShrink: true);
             return;
         }
 
         if (e.IsControlDown)
         {
+            if (e.VirtualKeyCode == VirtualKeyA)
+            {
+                popup.SelectAllMirroredText();
+                QueueQuickInputFocusedMirrorRefresh(allowShrink: isVietnameseInputMode);
+                return;
+            }
+
             if (e.VirtualKeyCode == VirtualKeyV)
             {
                 var clipboardText = TryReadClipboardText();
                 if (!string.IsNullOrEmpty(clipboardText))
                 {
                     popup.InsertMirroredText(clipboardText);
+                    QueueQuickInputFocusedMirrorRefresh(allowShrink: isVietnameseInputMode);
                 }
             }
 
@@ -893,6 +961,7 @@ public partial class MainWindow : FluentWindow
             if (!string.IsNullOrEmpty(clipboardText))
             {
                 popup.InsertMirroredText(clipboardText);
+                QueueQuickInputFocusedMirrorRefresh(allowShrink: isVietnameseInputMode);
             }
 
             return;
@@ -902,33 +971,123 @@ public partial class MainWindow : FluentWindow
         {
             case VirtualKeyBackspace:
                 popup.ApplyMirroredBackspace();
+                QueueQuickInputFocusedMirrorRefresh(allowShrink: true);
                 return;
             case VirtualKeyDelete:
                 popup.ApplyMirroredDelete();
+                QueueQuickInputFocusedMirrorRefresh(allowShrink: true);
                 return;
             case VirtualKeyLeft:
                 popup.MoveCaretLeft();
+                QueueQuickInputFocusedMirrorRefresh(allowShrink: isVietnameseInputMode);
                 return;
             case VirtualKeyRight:
                 popup.MoveCaretRight();
+                QueueQuickInputFocusedMirrorRefresh(allowShrink: isVietnameseInputMode);
                 return;
             case VirtualKeyHome:
                 popup.MoveCaretHome();
+                QueueQuickInputFocusedMirrorRefresh(allowShrink: isVietnameseInputMode);
                 return;
             case VirtualKeyEnd:
                 popup.MoveCaretEnd();
+                QueueQuickInputFocusedMirrorRefresh(allowShrink: isVietnameseInputMode);
                 return;
         }
 
-        if (!string.IsNullOrEmpty(e.TypedText))
+        if (isVietnameseInputMode && TryApplyVietnameseTypingTransform(popup, e))
         {
-            popup.InsertMirroredText(e.TypedText);
-            QueueQuickInputFocusedMirrorRefresh();
+            QueueQuickInputFocusedMirrorRefresh(allowShrink: true);
+            return;
         }
+
+        var insertText = ResolveDirectInputText(e);
+        if (!string.IsNullOrEmpty(insertText))
+        {
+            popup.InsertMirroredText(insertText);
+            QueueQuickInputFocusedMirrorRefresh(allowShrink: isVietnameseInputMode);
+            return;
+        }
+
+        QueueQuickInputFocusedMirrorRefresh(allowShrink: isVietnameseInputMode);
     }
 
-    private bool TrySyncMirrorFromFocusedElement(QuickInputPopup popup)
+    private bool IsVietnameseQuickInputMode()
     {
+        return string.Equals(
+            NormalizeQuickInputInputLanguage(_state.Settings.QuickInputInputLanguage),
+            QuickInputTypingOptions.InputLanguageVietnamese,
+            StringComparison.Ordinal
+        );
+    }
+
+    private bool TryApplyVietnameseTypingTransform(QuickInputPopup popup, GlobalKeyPressedEventArgs e)
+    {
+        var token = ResolveDirectInputText(e);
+        if (string.IsNullOrEmpty(token))
+        {
+            return false;
+        }
+
+        if (
+            !VietnameseTypingMapper.TryTransform(
+                popup.CurrentText,
+                token,
+                NormalizeQuickInputVietnameseTypingStyle(_state.Settings.QuickInputVietnameseTypingStyle),
+                out var transformedText
+            )
+        )
+        {
+            return false;
+        }
+
+        popup.SetMirroredText(transformedText);
+        return true;
+    }
+
+    private static string? ResolveDirectInputText(GlobalKeyPressedEventArgs e)
+    {
+        if (!string.IsNullOrEmpty(e.TypedText))
+        {
+            return e.TypedText;
+        }
+
+        var letter = ResolveLetterFromVirtualKey(e);
+        if (letter.HasValue)
+        {
+            return letter.Value.ToString();
+        }
+
+        if (e.VirtualKeyCode >= VirtualKeyNumpad0 && e.VirtualKeyCode <= VirtualKeyNumpad9)
+        {
+            var digit = e.VirtualKeyCode - VirtualKeyNumpad0;
+            return ((char)('0' + digit)).ToString();
+        }
+
+        if (!e.IsShiftDown && e.VirtualKeyCode >= VirtualKeyNumber0 && e.VirtualKeyCode <= VirtualKeyNumber9)
+        {
+            var digit = e.VirtualKeyCode - VirtualKeyNumber0;
+            return ((char)('0' + digit)).ToString();
+        }
+
+        return null;
+    }
+
+    private static char? ResolveLetterFromVirtualKey(GlobalKeyPressedEventArgs e)
+    {
+        if (e.VirtualKeyCode < VirtualKeyA || e.VirtualKeyCode > VirtualKeyZ)
+        {
+            return null;
+        }
+
+        var lower = (char)('a' + (e.VirtualKeyCode - VirtualKeyA));
+        return e.IsShiftDown ? char.ToUpperInvariant(lower) : lower;
+    }
+
+    private bool TrySyncMirrorFromFocusedElement(QuickInputPopup popup, bool allowShrink, out bool hasFocusedSnapshot)
+    {
+        hasFocusedSnapshot = false;
+
         if (!_isQuickInputMirrorBaselineCaptured)
         {
             return false;
@@ -939,38 +1098,82 @@ public partial class MainWindow : FluentWindow
             return false;
         }
 
-        var mirroredText = BuildMirroredTextFromFocused(focusedText);
+        hasFocusedSnapshot = true;
+        if (!TryBuildMirroredTextFromFocused(focusedText, out var mirroredText))
+        {
+            // Strict "from popup show time" behavior:
+            // if current focused text cannot be related to baseline, ignore snapshot
+            // instead of pulling full historical text into popup.
+            // When popup text is still empty, re-anchor baseline to current focused text
+            // so next keystrokes are mirrored from this moment onward.
+            if (string.IsNullOrEmpty(popup.CurrentText))
+            {
+                _quickInputMirrorBaselineText = focusedText;
+                _isQuickInputMirrorBaselineCaptured = true;
+            }
+
+            hasFocusedSnapshot = false;
+            return false;
+        }
+
         if (mirroredText.Length > MaxMirroredInputLength)
         {
             mirroredText = mirroredText[^MaxMirroredInputLength..];
+        }
+
+        if (
+            popup.CurrentText.Length > 0 &&
+            mirroredText.Length == 0 &&
+            string.Equals(focusedText, _quickInputMirrorBaselineText, StringComparison.Ordinal)
+        )
+        {
+            // The target control has not published the first typed character yet.
+            // Keep local mirrored text and let the delayed refresh reconcile later.
+            return false;
+        }
+
+        if (!allowShrink && mirroredText.Length < popup.CurrentText.Length)
+        {
+            // Bỏ qua snapshot cũ để tránh mất chữ khi app đích chưa cập nhật xong text.
+            return false;
+        }
+
+        if (string.Equals(popup.CurrentText, mirroredText, StringComparison.Ordinal))
+        {
+            return false;
         }
 
         popup.SetMirroredText(mirroredText);
         return true;
     }
 
-    private string BuildMirroredTextFromFocused(string focusedText)
+    private bool TryBuildMirroredTextFromFocused(string focusedText, out string mirroredText)
     {
+        mirroredText = string.Empty;
+
         if (string.IsNullOrEmpty(_quickInputMirrorBaselineText))
         {
-            return focusedText;
+            mirroredText = focusedText;
+            return true;
         }
 
         if (focusedText.StartsWith(_quickInputMirrorBaselineText, StringComparison.Ordinal))
         {
-            return focusedText[_quickInputMirrorBaselineText.Length..];
+            mirroredText = focusedText[_quickInputMirrorBaselineText.Length..];
+            return true;
         }
 
         if (_quickInputMirrorBaselineText.StartsWith(focusedText, StringComparison.Ordinal))
         {
-            return string.Empty;
+            mirroredText = string.Empty;
+            return true;
         }
 
-        // Khi text nền bị chỉnh phức tạp (IME/autocorrect), ưu tiên giữ nguyên text thật để không mất dấu.
-        return focusedText;
+        // Baseline mismatch means this snapshot likely includes unrelated/old content.
+        return false;
     }
 
-    private void QueueQuickInputFocusedMirrorRefresh()
+    private void QueueQuickInputFocusedMirrorRefresh(bool allowShrink = false)
     {
         if (_isQuickInputMirrorRefreshQueued)
         {
@@ -978,17 +1181,33 @@ public partial class MainWindow : FluentWindow
         }
 
         _isQuickInputMirrorRefreshQueued = true;
-        _ = Dispatcher.BeginInvoke(() =>
+        _ = Dispatcher.BeginInvoke(async () =>
         {
-            _isQuickInputMirrorRefreshQueued = false;
-
-            var popup = _quickInputPopup;
-            if (popup is null || !popup.IsVisible || popup.IsInputFocused)
+            try
             {
-                return;
-            }
+                await Task.Delay(MirrorRefreshFastDelayMs);
+                var popup = _quickInputPopup;
+                if (popup is null || !popup.IsVisible || popup.IsInputFocused)
+                {
+                    return;
+                }
 
-            _ = TrySyncMirrorFromFocusedElement(popup);
+                _ = TrySyncMirrorFromFocusedElement(popup, allowShrink, out _);
+
+                // Extra pass to catch IME/composition finalized text.
+                await Task.Delay(MirrorRefreshImeDelayMs);
+                popup = _quickInputPopup;
+                if (popup is null || !popup.IsVisible || popup.IsInputFocused)
+                {
+                    return;
+                }
+
+                _ = TrySyncMirrorFromFocusedElement(popup, allowShrink: true, out _);
+            }
+            finally
+            {
+                _isQuickInputMirrorRefreshQueued = false;
+            }
         }, DispatcherPriority.Background);
     }
 
@@ -1118,6 +1337,19 @@ public partial class MainWindow : FluentWindow
         if (!TryBuildProviderReadySettings(out var settings, out var apiKeys))
         {
             return;
+        }
+
+        if (!HasActiveTranslation())
+        {
+            var popup = ShowHotkeyProgressPopup(
+                resetProgress: true,
+                title: "Đang chuẩn bị dịch text nhập tay...",
+                subtitle: string.Empty
+            );
+            popup?.AddStep("Đã nhận nội dung từ popup nhập tay.");
+            popup?.SetSourcePreview(input);
+            popup?.SetProgressState("Đang đưa tác vụ vào luồng dịch...", 10);
+            BeginMainTranslationProgress("Đang chuẩn bị dịch từ popup nhập tay...", 10);
         }
 
         var request = new PendingTranslationRequest(input, settings, apiKeys);
@@ -2095,7 +2327,11 @@ public partial class MainWindow : FluentWindow
             QuickInputHotkeyShift = QuickInputHotkeyShiftCheckBox.IsChecked == true,
             QuickInputHotkeyAlt = QuickInputHotkeyAltCheckBox.IsChecked == true,
             QuickInputHotkeyWin = QuickInputHotkeyWinCheckBox.IsChecked == true,
-            QuickInputHotkeyKey = quickInputHotkeyKey
+            QuickInputHotkeyKey = quickInputHotkeyKey,
+            QuickInputInputLanguage = NormalizeQuickInputInputLanguage(_state.Settings.QuickInputInputLanguage),
+            QuickInputVietnameseTypingStyle = NormalizeQuickInputVietnameseTypingStyle(
+                _state.Settings.QuickInputVietnameseTypingStyle
+            )
         };
     }
 
@@ -2442,6 +2678,10 @@ public partial class MainWindow : FluentWindow
             QuickInputHotkeyAltCheckBox.IsChecked = settings.QuickInputHotkeyAlt;
             QuickInputHotkeyWinCheckBox.IsChecked = settings.QuickInputHotkeyWin;
             QuickInputHotkeyKeyComboBox.SelectedItem = NormalizeQuickInputHotkeyKey(settings.QuickInputHotkeyKey);
+            _quickInputPopup?.ApplyInputOptions(
+                NormalizeQuickInputInputLanguage(settings.QuickInputInputLanguage),
+                NormalizeQuickInputVietnameseTypingStyle(settings.QuickInputVietnameseTypingStyle)
+            );
 
             ShowHotkeyPreview(settings);
             UpdateApiProviderUiState(provider);
@@ -2616,6 +2856,39 @@ public partial class MainWindow : FluentWindow
     private static string NormalizeQuickInputHotkeyKey(string? key)
     {
         return NormalizeHotkeyKey(key, DefaultQuickInputHotkeyKey);
+    }
+
+    private static string NormalizeQuickInputInputLanguage(string? inputLanguage)
+    {
+        return string.Equals(
+            inputLanguage,
+            QuickInputTypingOptions.InputLanguageOther,
+            StringComparison.OrdinalIgnoreCase
+        )
+            ? QuickInputTypingOptions.InputLanguageOther
+            : QuickInputTypingOptions.InputLanguageVietnamese;
+    }
+
+    private static string NormalizeQuickInputVietnameseTypingStyle(string? typingStyle)
+    {
+        if (
+            string.Equals(
+                typingStyle,
+                QuickInputTypingOptions.VietnameseTypingStyleViqr,
+                StringComparison.OrdinalIgnoreCase
+            )
+        )
+        {
+            return QuickInputTypingOptions.VietnameseTypingStyleViqr;
+        }
+
+        return string.Equals(
+            typingStyle,
+            QuickInputTypingOptions.VietnameseTypingStyleVni,
+            StringComparison.OrdinalIgnoreCase
+        )
+            ? QuickInputTypingOptions.VietnameseTypingStyleVni
+            : QuickInputTypingOptions.VietnameseTypingStyleTelex;
     }
 
     private static string ResolveNonConflictingQuickInputHotkeyKey(AppSettings settings)
@@ -2806,6 +3079,34 @@ public partial class MainWindow : FluentWindow
             settings.QuickInputHotkeyAlt = false;
             settings.QuickInputHotkeyWin = false;
             settings.QuickInputHotkeyKey = ResolveNonConflictingQuickInputHotkeyKey(settings);
+            changed = true;
+        }
+
+        var normalizedQuickInputLanguage = NormalizeQuickInputInputLanguage(settings.QuickInputInputLanguage);
+        if (
+            !string.Equals(
+                normalizedQuickInputLanguage,
+                settings.QuickInputInputLanguage,
+                StringComparison.Ordinal
+            )
+        )
+        {
+            settings.QuickInputInputLanguage = normalizedQuickInputLanguage;
+            changed = true;
+        }
+
+        var normalizedQuickInputTypingStyle = NormalizeQuickInputVietnameseTypingStyle(
+            settings.QuickInputVietnameseTypingStyle
+        );
+        if (
+            !string.Equals(
+                normalizedQuickInputTypingStyle,
+                settings.QuickInputVietnameseTypingStyle,
+                StringComparison.Ordinal
+            )
+        )
+        {
+            settings.QuickInputVietnameseTypingStyle = normalizedQuickInputTypingStyle;
             changed = true;
         }
 

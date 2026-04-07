@@ -23,6 +23,7 @@
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
                 <Grid Grid.Row="0"
@@ -31,11 +32,24 @@
                       Background="Transparent"
                       MouseLeftButtonDown="DragHandle_OnMouseLeftButtonDown">
                     <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
 
-                    <Grid>
+                    <ui:Button x:Name="InputSettingsButton"
+                               Width="26"
+                               Height="26"
+                               Padding="0"
+                               Appearance="Secondary"
+                               ToolTip="Cài đặt input popup"
+                               Click="InputSettingsButton_OnClick">
+                        <ui:Button.Icon>
+                            <ui:SymbolIcon Symbol="Settings24" />
+                        </ui:Button.Icon>
+                    </ui:Button>
+
+                    <Grid Grid.Column="1">
                         <Border Width="40"
                                 Height="4"
                                 HorizontalAlignment="Center"
@@ -44,7 +58,7 @@
                                 CornerRadius="2" />
                     </Grid>
 
-                    <ui:Button Grid.Column="1"
+                    <ui:Button Grid.Column="2"
                                Width="26"
                                Height="26"
                                Margin="4,0,0,0"
@@ -58,7 +72,44 @@
                     </ui:Button>
                 </Grid>
 
-                <Grid Grid.Row="1">
+                <ui:Card x:Name="InputSettingsPanel"
+                         Grid.Row="1"
+                         Margin="0,0,0,4"
+                         Padding="8,6"
+                         Visibility="Collapsed">
+                    <StackPanel MinWidth="240">
+                        <TextBlock FontSize="12"
+                                   FontWeight="SemiBold"
+                                   Text="Ngôn ngữ đầu vào" />
+                        <ComboBox x:Name="InputLanguageComboBox"
+                                  Margin="0,6,0,0"
+                                  SelectionChanged="InputLanguageComboBox_OnSelectionChanged">
+                            <ComboBoxItem Content="Vietnamese (Tiếng Việt)"
+                                          Tag="Vietnamese" />
+                            <ComboBoxItem Content="Ngôn ngữ khác"
+                                          Tag="Other" />
+                        </ComboBox>
+
+                        <StackPanel x:Name="VietnameseTypingStylePanel"
+                                    Margin="0,10,0,0">
+                            <TextBlock FontSize="12"
+                                       FontWeight="SemiBold"
+                                       Text="Kiểu gõ tiếng Việt" />
+                            <ComboBox x:Name="VietnameseTypingStyleComboBox"
+                                      Margin="0,6,0,0"
+                                      SelectionChanged="VietnameseTypingStyleComboBox_OnSelectionChanged">
+                                <ComboBoxItem Content="Telex"
+                                              Tag="Telex" />
+                                <ComboBoxItem Content="VNI"
+                                              Tag="Vni" />
+                                <ComboBoxItem Content="VIQR"
+                                              Tag="Viqr" />
+                            </ComboBox>
+                        </StackPanel>
+                    </StackPanel>
+                </ui:Card>
+
+                <Grid Grid.Row="2">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
