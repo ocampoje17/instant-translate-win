@@ -548,7 +548,32 @@
                                 <TextBlock x:Name="HotkeyPreviewTextBlock"
                                            Margin="0,10,0,0"
                                            Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                                           Text="Hotkey hiện tại: Ctrl+Shift+E" />
+                                           Text="Hotkey dịch: Ctrl+Shift+E" />
+
+                                <Separator Margin="0,12,0,10" />
+
+                                <TextBlock FontWeight="SemiBold" Text="Hotkey popup nhập tay" />
+                                <TextBlock Margin="0,6,0,0"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                           Text="Dùng để bật/tắt popup nhập nhanh khi không lấy được text đang chọn." />
+                                <WrapPanel Margin="0,10,0,0">
+                                    <CheckBox x:Name="QuickInputHotkeyCtrlCheckBox" Margin="0,0,10,0" Content="Ctrl" Checked="SettingsControl_OnChanged" Unchecked="SettingsControl_OnChanged" />
+                                    <CheckBox x:Name="QuickInputHotkeyShiftCheckBox" Margin="0,0,10,0" Content="Shift" Checked="SettingsControl_OnChanged" Unchecked="SettingsControl_OnChanged" />
+                                    <CheckBox x:Name="QuickInputHotkeyAltCheckBox" Margin="0,0,10,0" Content="Alt" Checked="SettingsControl_OnChanged" Unchecked="SettingsControl_OnChanged" />
+                                    <CheckBox x:Name="QuickInputHotkeyWinCheckBox" Margin="0,0,10,0" Content="Win" Checked="SettingsControl_OnChanged" Unchecked="SettingsControl_OnChanged" />
+                                </WrapPanel>
+                                <StackPanel Margin="0,10,0,0" Orientation="Horizontal">
+                                    <TextBlock VerticalAlignment="Center" Text="Phím chính:" />
+                                    <ComboBox x:Name="QuickInputHotkeyKeyComboBox"
+                                              Width="130"
+                                              Margin="8,0,0,0"
+                                              ItemsSource="{Binding HotkeyKeyOptions}"
+                                              SelectionChanged="SettingsControl_OnChanged" />
+                                </StackPanel>
+                                <TextBlock x:Name="QuickInputHotkeyPreviewTextBlock"
+                                           Margin="0,10,0,0"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                           Text="Hotkey popup nhập tay: Ctrl+Shift+H" />
                             </StackPanel>
                         </ui:Card>
 

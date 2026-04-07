@@ -13,6 +13,7 @@ namespace InstantTranslateWin.App;
 public partial class HotkeyProgressPopup : FluentWindow
 {
     public event EventHandler? RestartAppRequested;
+    public event EventHandler? QuickInputRequested;
 
     private const uint MonitorDefaultToNearest = 0x00000002;
 
@@ -115,8 +116,6 @@ public partial class HotkeyProgressPopup : FluentWindow
         LoadingPage.Visibility = Visibility.Visible;
         ResultPage.Visibility = Visibility.Hidden;
         ResultActionsPanel.Visibility = Visibility.Collapsed;
-        RestartAppButton.Visibility = Visibility.Collapsed;
-        OpenLogFileButton.Visibility = Visibility.Collapsed;
         WorkingProgressRing.IsIndeterminate = true;
         WorkingProgressRing.Visibility = Visibility.Visible;
     }
@@ -145,8 +144,6 @@ public partial class HotkeyProgressPopup : FluentWindow
         LoadingPage.Visibility = Visibility.Hidden;
         ResultPage.Visibility = Visibility.Visible;
         ResultActionsPanel.Visibility = Visibility.Collapsed;
-        RestartAppButton.Visibility = Visibility.Collapsed;
-        OpenLogFileButton.Visibility = Visibility.Collapsed;
 
         ResultStateIcon.Symbol = SymbolRegular.Checkmark24;
         ResultIconBadge.Background = _successBadgeBrush;
@@ -163,8 +160,8 @@ public partial class HotkeyProgressPopup : FluentWindow
         LoadingPage.Visibility = Visibility.Hidden;
         ResultPage.Visibility = Visibility.Visible;
         ResultActionsPanel.Visibility = Visibility.Visible;
-        RestartAppButton.Visibility = showRestartAction ? Visibility.Visible : Visibility.Collapsed;
-        OpenLogFileButton.Visibility = Visibility.Visible;
+        RestartAppMenuItem.Visibility = showRestartAction ? Visibility.Visible : Visibility.Collapsed;
+        OpenLogFileMenuItem.Visibility = Visibility.Visible;
 
         ResultStateIcon.Symbol = SymbolRegular.ErrorCircle24;
         ResultIconBadge.Background = _errorBadgeBrush;
@@ -366,13 +363,19 @@ public partial class HotkeyProgressPopup : FluentWindow
         CloseSafely();
     }
 
-    private void RestartAppButton_OnClick(object sender, RoutedEventArgs e)
+    private void OpenQuickInputButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        _autoCloseRequested = false;
+        QuickInputRequested?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void RestartAppMenuItem_OnClick(object sender, RoutedEventArgs e)
     {
         _autoCloseRequested = false;
         RestartAppRequested?.Invoke(this, EventArgs.Empty);
     }
 
-    private void OpenLogFileButton_OnClick(object sender, RoutedEventArgs e)
+    private void OpenLogFileMenuItem_OnClick(object sender, RoutedEventArgs e)
     {
         _autoCloseRequested = false;
 
@@ -393,7 +396,7 @@ public partial class HotkeyProgressPopup : FluentWindow
         }
         catch (Exception ex)
         {
-            ErrorFileLogger.LogException("HotkeyProgressPopup.OpenLogFileButton_OnClick", ex);
+            ErrorFileLogger.LogException("HotkeyProgressPopup.OpenLogFileMenuItem_OnClick", ex);
             System.Windows.MessageBox.Show(
                 $"Không mở được log file: {ex.Message}",
                 "Instant Translate",

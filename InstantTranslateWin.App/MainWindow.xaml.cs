@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
@@ -20,7 +21,10 @@ namespace InstantTranslateWin.App;
 
 public partial class MainWindow : FluentWindow
 {
-    private const int HotkeyId = 1001;
+    private const int TranslateHotkeyId = 1001;
+    private const int QuickInputHotkeyId = 1002;
+    private const string DefaultTranslateHotkeyKey = "E";
+    private const string DefaultQuickInputHotkeyKey = "H";
     private const string TaskbarCreatedMessageName = "TaskbarCreated";
     private const int TrayIconHealthCheckSeconds = 30;
     private const int BackgroundMemoryTrimDelayMs = 300;
@@ -30,6 +34,16 @@ public partial class MainWindow : FluentWindow
     private const string DefaultLocalAiBaseUrl = "https://api.openai.com/v1";
     private const string LegacyDefaultLocalAiBaseUrl = "http://localhost:1234/v1";
     private const string DefaultLocalAiModel = "gpt-4o-mini";
+    private const int VirtualKeyBackspace = 0x08;
+    private const int VirtualKeyEscape = 0x1B;
+    private const int VirtualKeyEnd = 0x23;
+    private const int VirtualKeyHome = 0x24;
+    private const int VirtualKeyLeft = 0x25;
+    private const int VirtualKeyRight = 0x27;
+    private const int VirtualKeyInsert = 0x2D;
+    private const int VirtualKeyDelete = 0x2E;
+    private const int VirtualKeyV = 0x56;
+    private const int MaxMirroredInputLength = 20000;
     private static readonly string[] DefaultModels = ["gemini-flash-lite-latest", "gemini-2.0-flash-lite"];
     private static readonly string[] HotkeyKeys = BuildHotkeyKeys();
     private static readonly LanguageOption[] SupportedLanguages =
@@ -61,8 +75,11 @@ public partial class MainWindow : FluentWindow
     private readonly object _manualTranslationLock = new();
 
     private AppState _state = new();
-    private GlobalHotkeyService? _hotkeyService;
+    private GlobalHotkeyService? _translateHotkeyService;
+    private GlobalHotkeyService? _quickInputHotkeyService;
+    private GlobalKeyboardHookService? _globalKeyboardHookService;
     private HotkeyProgressPopup? _hotkeyPopup;
+    private QuickInputPopup? _quickInputPopup;
     private readonly Stack<NavigationViewItem> _navigationBackStack = new();
     private string? _currentTranslatingInput;
     private string? _currentManualTranslatingInput;
@@ -75,6 +92,9 @@ public partial class MainWindow : FluentWindow
     private bool _isApplyingSettings;
     private bool _isAutoSavingSettings;
     private bool _isManualTargetLanguageInitialized;
+    private bool _isQuickInputMirrorBaselineCaptured;
+    private bool _isQuickInputMirrorRefreshQueued;
+    private string _quickInputMirrorBaselineText = string.Empty;
     private int _taskbarCreatedMessageId;
     private HwndSource? _windowHwndSource;
     private readonly DispatcherTimer _trayIconHealthCheckTimer = new()
@@ -232,7 +252,7 @@ public partial class MainWindow : FluentWindow
         EnsureTrayIconRegistered("OnLoaded");
         StartTrayIconHealthMonitor();
 
-        _isHotkeyRegistered = TryRegisterHotkey(_state.Settings, out var error);
+        _isHotkeyRegistered = TryRegisterHotkeys(_state.Settings, out var error);
         if (!_isHotkeyRegistered)
         {
             ShowStatus("Không đăng ký được phím tắt", error, InfoBarSeverity.Warning);
@@ -241,7 +261,7 @@ public partial class MainWindow : FluentWindow
         {
             ShowStatus(
                 "Sẵn sàng",
-                $"Hotkey: {BuildHotkeyDisplay(_state.Settings)} | Ngôn ngữ đích: {GetTargetLanguageDisplayName(_state.Settings.TargetLanguage)}",
+                $"Hotkey dịch: {BuildHotkeyDisplay(_state.Settings)} | Hotkey popup nhập tay: {BuildQuickInputHotkeyDisplay(_state.Settings)} | Ngôn ngữ đích: {GetTargetLanguageDisplayName(_state.Settings.TargetLanguage)}",
                 InfoBarSeverity.Success
             );
         }
@@ -253,6 +273,7 @@ public partial class MainWindow : FluentWindow
 
         SetMainTranslationIdleStatus();
         SetManualTranslationIdleStatus();
+        InitializeGlobalKeyboardHook();
         _navigationBackStack.Clear();
         SwitchToTab(0, QuickNavItem);
     }
@@ -274,6 +295,7 @@ public partial class MainWindow : FluentWindow
         if (keepRunningInBackground)
         {
             e.Cancel = true;
+            HideQuickInputPopup();
             Hide();
             ShowInTaskbar = false;
             EnsureTrayIconRegistered("OnClosingBackground");
@@ -314,7 +336,10 @@ public partial class MainWindow : FluentWindow
         await _translateLock.WaitAsync();
         try
         {
-            _hotkeyService?.Dispose();
+            _translateHotkeyService?.Dispose();
+            _quickInputHotkeyService?.Dispose();
+            _globalKeyboardHookService?.Dispose();
+            _globalKeyboardHookService = null;
             if (_hotkeyPopup is not null)
             {
                 try
@@ -325,6 +350,18 @@ public partial class MainWindow : FluentWindow
                 {
                     ErrorFileLogger.LogException("MainWindow.OnClosed.HotkeyPopupClose", ex);
                     // Ignore popup close failures during app shutdown.
+                }
+            }
+
+            if (_quickInputPopup is not null)
+            {
+                try
+                {
+                    _quickInputPopup.CloseForShutdown();
+                }
+                catch (Exception ex)
+                {
+                    ErrorFileLogger.LogException("MainWindow.OnClosed.QuickInputPopupClose", ex);
                 }
             }
 
@@ -524,6 +561,7 @@ public partial class MainWindow : FluentWindow
         {
             _hotkeyPopup = new HotkeyProgressPopup();
             _hotkeyPopup.RestartAppRequested += HotkeyPopupOnRestartAppRequested;
+            _hotkeyPopup.QuickInputRequested += HotkeyPopupOnQuickInputRequested;
             createdNew = true;
         }
 
@@ -541,6 +579,7 @@ public partial class MainWindow : FluentWindow
 
             _hotkeyPopup = new HotkeyProgressPopup();
             _hotkeyPopup.RestartAppRequested += HotkeyPopupOnRestartAppRequested;
+            _hotkeyPopup.QuickInputRequested += HotkeyPopupOnQuickInputRequested;
             createdNew = true;
             if (!TryShowHotkeyPopup(_hotkeyPopup))
             {
@@ -587,6 +626,11 @@ public partial class MainWindow : FluentWindow
         }
     }
 
+    private void HotkeyPopupOnQuickInputRequested(object? sender, EventArgs e)
+    {
+        ShowQuickInputPopup(clearText: true);
+    }
+
     private static bool TryShowHotkeyPopup(HotkeyProgressPopup popup)
     {
         try
@@ -608,6 +652,106 @@ public partial class MainWindow : FluentWindow
         }
     }
 
+    private QuickInputPopup EnsureQuickInputPopup()
+    {
+        if (_quickInputPopup is not null)
+        {
+            return _quickInputPopup;
+        }
+
+        _quickInputPopup = new QuickInputPopup();
+        _quickInputPopup.SubmitRequested += QuickInputPopupOnSubmitRequested;
+        return _quickInputPopup;
+    }
+
+    private void ToggleQuickInputPopupFromHotkey()
+    {
+        _ = Dispatcher.BeginInvoke(() =>
+        {
+            if (_quickInputPopup is { IsVisible: true })
+            {
+                HideQuickInputPopup();
+                return;
+            }
+
+            ShowQuickInputPopup(clearText: true);
+        }, DispatcherPriority.Send);
+    }
+
+    private void ShowQuickInputPopup(bool clearText)
+    {
+        var popup = EnsureQuickInputPopup();
+        if (TryShowQuickInputPopup(popup, clearText))
+        {
+            CaptureQuickInputMirrorBaseline();
+            return;
+        }
+
+        try
+        {
+            popup.CloseForShutdown();
+        }
+        catch (Exception ex)
+        {
+            ErrorFileLogger.LogException("MainWindow.ShowQuickInputPopup.CloseAndRecreate", ex);
+        }
+
+        _quickInputPopup = new QuickInputPopup();
+        _quickInputPopup.SubmitRequested += QuickInputPopupOnSubmitRequested;
+        if (TryShowQuickInputPopup(_quickInputPopup, clearText))
+        {
+            CaptureQuickInputMirrorBaseline();
+            return;
+        }
+
+        _quickInputPopup = null;
+        ShowStatus("Không hiển thị được popup", "Popup nhập nhanh tạm thời không khả dụng.", InfoBarSeverity.Warning);
+    }
+
+    private void HideQuickInputPopup()
+    {
+        _quickInputPopup?.HidePopup();
+        ResetQuickInputMirrorBaseline();
+    }
+
+    private async void QuickInputPopupOnSubmitRequested(object? sender, string input)
+    {
+        await TranslateFromQuickInputPopupAsync(input);
+    }
+
+    private static bool TryShowQuickInputPopup(QuickInputPopup popup, bool clearText)
+    {
+        try
+        {
+            popup.ShowNearCursor(clearText);
+            return true;
+        }
+        catch (InvalidOperationException ex) when (
+            ex.Message.Contains("after a Window has closed", StringComparison.OrdinalIgnoreCase)
+        )
+        {
+            return false;
+        }
+        catch (Exception ex)
+        {
+            ErrorFileLogger.LogException("MainWindow.TryShowQuickInputPopup", ex);
+            return false;
+        }
+    }
+
+    private void CaptureQuickInputMirrorBaseline()
+    {
+        _isQuickInputMirrorBaselineCaptured = TryReadFocusedElementText(out var baselineText);
+        _quickInputMirrorBaselineText = _isQuickInputMirrorBaselineCaptured ? baselineText : string.Empty;
+    }
+
+    private void ResetQuickInputMirrorBaseline()
+    {
+        _isQuickInputMirrorBaselineCaptured = false;
+        _isQuickInputMirrorRefreshQueued = false;
+        _quickInputMirrorBaselineText = string.Empty;
+    }
+
     private void BeginMainTranslationProgress(string status, double progressPercent = 0)
     {
         UpdateMainTranslationProgress(status, progressPercent);
@@ -621,7 +765,7 @@ public partial class MainWindow : FluentWindow
     private void SetMainTranslationIdleStatus()
     {
         var status = _isHotkeyRegistered
-            ? $"Sẵn sàng. Hotkey: {BuildHotkeyDisplay(_state.Settings)}"
+            ? $"Sẵn sàng. Hotkey dịch: {BuildHotkeyDisplay(_state.Settings)} | Popup nhập tay: {BuildQuickInputHotkeyDisplay(_state.Settings)}"
             : "Hotkey chưa sẵn sàng. Mở tab Cài đặt để cấu hình lại.";
         QuickTranslationProgressView.SetIdle(status);
     }
@@ -645,7 +789,252 @@ public partial class MainWindow : FluentWindow
 
     private async void HotkeyServiceOnHotkeyPressed(object? sender, EventArgs e)
     {
+        if (_quickInputPopup is { IsVisible: true } popup)
+        {
+            popup.SubmitFromMirroredInput();
+            return;
+        }
+
         await TranslateSelectedTextFromForegroundAsync();
+    }
+
+    private void QuickInputHotkeyServiceOnHotkeyPressed(object? sender, EventArgs e)
+    {
+        ToggleQuickInputPopupFromHotkey();
+    }
+
+    private void InitializeGlobalKeyboardHook()
+    {
+        try
+        {
+            _globalKeyboardHookService?.Dispose();
+            _globalKeyboardHookService = new GlobalKeyboardHookService();
+            _globalKeyboardHookService.KeyPressed += GlobalKeyboardHookServiceOnKeyPressed;
+            if (_globalKeyboardHookService.Start())
+            {
+                return;
+            }
+
+            _globalKeyboardHookService.KeyPressed -= GlobalKeyboardHookServiceOnKeyPressed;
+            _globalKeyboardHookService.Dispose();
+            _globalKeyboardHookService = null;
+            ShowStatus("Cảnh báo", "Không bật được mirror gõ toàn cục cho popup nhập tay.", InfoBarSeverity.Warning);
+        }
+        catch (Exception ex)
+        {
+            ErrorFileLogger.LogException("MainWindow.InitializeGlobalKeyboardHook", ex);
+        }
+    }
+
+    private void GlobalKeyboardHookServiceOnKeyPressed(object? sender, GlobalKeyPressedEventArgs e)
+    {
+        if (_isShuttingDown)
+        {
+            return;
+        }
+
+        if (!Dispatcher.CheckAccess())
+        {
+            _ = Dispatcher.BeginInvoke(() => HandleGlobalMirroredInput(e), DispatcherPriority.Input);
+            return;
+        }
+
+        HandleGlobalMirroredInput(e);
+    }
+
+    private void HandleGlobalMirroredInput(GlobalKeyPressedEventArgs e)
+    {
+        var popup = _quickInputPopup;
+        if (popup is null || !popup.IsVisible)
+        {
+            return;
+        }
+
+        if (popup.IsInputFocused)
+        {
+            // Đang gõ trong textbox popup: không mirror để tránh ký tự bị lặp.
+            return;
+        }
+
+        if (e.VirtualKeyCode == VirtualKeyEscape)
+        {
+            popup.HidePopup();
+            return;
+        }
+
+        if (e.IsWindowsDown || e.IsAltDown)
+        {
+            return;
+        }
+
+        if (TrySyncMirrorFromFocusedElement(popup))
+        {
+            QueueQuickInputFocusedMirrorRefresh();
+            return;
+        }
+
+        if (e.IsControlDown)
+        {
+            if (e.VirtualKeyCode == VirtualKeyV)
+            {
+                var clipboardText = TryReadClipboardText();
+                if (!string.IsNullOrEmpty(clipboardText))
+                {
+                    popup.InsertMirroredText(clipboardText);
+                }
+            }
+
+            return;
+        }
+
+        if (e.IsShiftDown && e.VirtualKeyCode == VirtualKeyInsert)
+        {
+            var clipboardText = TryReadClipboardText();
+            if (!string.IsNullOrEmpty(clipboardText))
+            {
+                popup.InsertMirroredText(clipboardText);
+            }
+
+            return;
+        }
+
+        switch (e.VirtualKeyCode)
+        {
+            case VirtualKeyBackspace:
+                popup.ApplyMirroredBackspace();
+                return;
+            case VirtualKeyDelete:
+                popup.ApplyMirroredDelete();
+                return;
+            case VirtualKeyLeft:
+                popup.MoveCaretLeft();
+                return;
+            case VirtualKeyRight:
+                popup.MoveCaretRight();
+                return;
+            case VirtualKeyHome:
+                popup.MoveCaretHome();
+                return;
+            case VirtualKeyEnd:
+                popup.MoveCaretEnd();
+                return;
+        }
+
+        if (!string.IsNullOrEmpty(e.TypedText))
+        {
+            popup.InsertMirroredText(e.TypedText);
+            QueueQuickInputFocusedMirrorRefresh();
+        }
+    }
+
+    private bool TrySyncMirrorFromFocusedElement(QuickInputPopup popup)
+    {
+        if (!_isQuickInputMirrorBaselineCaptured)
+        {
+            return false;
+        }
+
+        if (!TryReadFocusedElementText(out var focusedText))
+        {
+            return false;
+        }
+
+        var mirroredText = BuildMirroredTextFromFocused(focusedText);
+        if (mirroredText.Length > MaxMirroredInputLength)
+        {
+            mirroredText = mirroredText[^MaxMirroredInputLength..];
+        }
+
+        popup.SetMirroredText(mirroredText);
+        return true;
+    }
+
+    private string BuildMirroredTextFromFocused(string focusedText)
+    {
+        if (string.IsNullOrEmpty(_quickInputMirrorBaselineText))
+        {
+            return focusedText;
+        }
+
+        if (focusedText.StartsWith(_quickInputMirrorBaselineText, StringComparison.Ordinal))
+        {
+            return focusedText[_quickInputMirrorBaselineText.Length..];
+        }
+
+        if (_quickInputMirrorBaselineText.StartsWith(focusedText, StringComparison.Ordinal))
+        {
+            return string.Empty;
+        }
+
+        // Khi text nền bị chỉnh phức tạp (IME/autocorrect), ưu tiên giữ nguyên text thật để không mất dấu.
+        return focusedText;
+    }
+
+    private void QueueQuickInputFocusedMirrorRefresh()
+    {
+        if (_isQuickInputMirrorRefreshQueued)
+        {
+            return;
+        }
+
+        _isQuickInputMirrorRefreshQueued = true;
+        _ = Dispatcher.BeginInvoke(() =>
+        {
+            _isQuickInputMirrorRefreshQueued = false;
+
+            var popup = _quickInputPopup;
+            if (popup is null || !popup.IsVisible || popup.IsInputFocused)
+            {
+                return;
+            }
+
+            _ = TrySyncMirrorFromFocusedElement(popup);
+        }, DispatcherPriority.Background);
+    }
+
+    private static string? TryReadClipboardText()
+    {
+        try
+        {
+            return Clipboard.ContainsText() ? Clipboard.GetText() : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static bool TryReadFocusedElementText(out string text)
+    {
+        text = string.Empty;
+
+        try
+        {
+            var focusedElement = AutomationElement.FocusedElement;
+            if (focusedElement is null)
+            {
+                return false;
+            }
+
+            if (focusedElement.TryGetCurrentPattern(ValuePattern.Pattern, out var valuePatternObj))
+            {
+                text = ((ValuePattern)valuePatternObj).Current.Value ?? string.Empty;
+                return true;
+            }
+
+            if (focusedElement.TryGetCurrentPattern(TextPattern.Pattern, out var textPatternObj))
+            {
+                text = ((TextPattern)textPatternObj).DocumentRange.GetText(-1) ?? string.Empty;
+                text = text.Replace("\r", string.Empty);
+                return true;
+            }
+        }
+        catch
+        {
+            return false;
+        }
+
+        return false;
     }
 
     private async Task TranslateSelectedTextFromForegroundAsync()
@@ -654,17 +1043,8 @@ public partial class MainWindow : FluentWindow
 
         try
         {
-            var settings = BuildSettingsFromUi(includeApiKey: false);
-            if (
-                !TryResolveProviderRequest(
-                    settings,
-                    out var apiKeys,
-                    out var validationError,
-                    out var validationErrorKind
-                )
-            )
+            if (!TryBuildProviderReadySettings(out var settings, out var apiKeys))
             {
-                ShowProviderValidationError(validationError, validationErrorKind);
                 return;
             }
 
@@ -699,9 +1079,10 @@ public partial class MainWindow : FluentWindow
 
                 ShowStatus(
                     "Không có text",
-                    "Không đọc được text đang chọn. Hãy thử chọn lại; nếu vẫn lỗi, hãy khởi động lại app.",
+                    $"Không đọc được text đang chọn. Popup nhập tay đã mở ({BuildQuickInputHotkeyDisplay(_state.Settings)}).",
                     InfoBarSeverity.Warning
                 );
+                ShowQuickInputPopup(clearText: true);
                 return;
             }
 
@@ -721,6 +1102,45 @@ public partial class MainWindow : FluentWindow
 
             ShowStatus("Lỗi dịch", ex.Message, InfoBarSeverity.Error);
         }
+    }
+
+    private async Task TranslateFromQuickInputPopupAsync(string sourceText)
+    {
+        HideQuickInputPopup();
+
+        var input = sourceText?.Trim();
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            ShowStatus("Thiếu nội dung", "Nhập text vào popup rồi bấm hotkey dịch hoặc nút Dịch.", InfoBarSeverity.Warning);
+            return;
+        }
+
+        if (!TryBuildProviderReadySettings(out var settings, out var apiKeys))
+        {
+            return;
+        }
+
+        var request = new PendingTranslationRequest(input, settings, apiKeys);
+        await EnqueueOrProcessTranslationAsync(request);
+    }
+
+    private bool TryBuildProviderReadySettings(out AppSettings settings, out IReadOnlyList<string> apiKeys)
+    {
+        settings = BuildSettingsFromUi(includeApiKey: false);
+        if (
+            TryResolveProviderRequest(
+                settings,
+                out apiKeys,
+                out var validationError,
+                out var validationErrorKind
+            )
+        )
+        {
+            return true;
+        }
+
+        ShowProviderValidationError(validationError, validationErrorKind);
+        return false;
     }
 
     private void TranslateManualButton_Click(object sender, RoutedEventArgs e)
@@ -1065,7 +1485,7 @@ public partial class MainWindow : FluentWindow
             if (popup is not null)
             {
                 popup.AddStep("Xảy ra lỗi trong quá trình dịch.");
-                popup.SetErrorState(ex.Message, showRestartAction: false);
+                popup.SetErrorState(ex.Message, showRestartAction: true);
                 // Popup lỗi: auto-close sau 10s.
                 popup.ScheduleClose(TimeSpan.FromSeconds(10));
             }
@@ -1356,9 +1776,20 @@ public partial class MainWindow : FluentWindow
             var previousSettings = _state.Settings;
             var newSettings = BuildSettingsFromUi(includeApiKey: false);
 
-            if (!TryRegisterHotkey(newSettings, out var error))
+            if (AreHotkeysConflicting(newSettings))
             {
-                _isHotkeyRegistered = TryRegisterHotkey(previousSettings, out _);
+                ApplySettingsToUi(previousSettings, includeApiKey: false);
+                ShowStatus(
+                    "Không áp dụng được hotkey",
+                    "Hotkey dịch và hotkey popup nhập tay không được trùng nhau.",
+                    InfoBarSeverity.Error
+                );
+                return;
+            }
+
+            if (!TryRegisterHotkeys(newSettings, out var error))
+            {
+                _isHotkeyRegistered = TryRegisterHotkeys(previousSettings, out _);
                 ApplySettingsToUi(previousSettings, includeApiKey: false);
                 ShowStatus("Không áp dụng được hotkey", error, InfoBarSeverity.Error);
                 return;
@@ -1373,7 +1804,7 @@ public partial class MainWindow : FluentWindow
             catch (Exception ex)
             {
                 ErrorFileLogger.LogException("MainWindow.AutoSaveNonApiSettingsAsync.StartupRegistration", ex);
-                _isHotkeyRegistered = TryRegisterHotkey(previousSettings, out _);
+                _isHotkeyRegistered = TryRegisterHotkeys(previousSettings, out _);
                 ApplySettingsToUi(previousSettings, includeApiKey: false);
                 ShowStatus("Không áp dụng được startup", ex.Message, InfoBarSeverity.Error);
                 return;
@@ -1386,7 +1817,7 @@ public partial class MainWindow : FluentWindow
             catch (Exception ex)
             {
                 ErrorFileLogger.LogException("MainWindow.AutoSaveNonApiSettingsAsync.ApplyTheme", ex);
-                _isHotkeyRegistered = TryRegisterHotkey(previousSettings, out _);
+                _isHotkeyRegistered = TryRegisterHotkeys(previousSettings, out _);
                 ApplyTheme(previousSettings.AppTheme);
                 ApplySettingsToUi(previousSettings, includeApiKey: false);
                 ShowStatus("Không áp dụng được giao diện", ex.Message, InfoBarSeverity.Error);
@@ -1630,7 +2061,8 @@ public partial class MainWindow : FluentWindow
         var localAiBaseUrl = NormalizeLocalAiBaseUrl(LocalAiBaseUrlTextBox.Text);
         var localAiUseCustomBaseUrl = LocalAiUseCustomBaseUrlToggleSwitch.IsChecked == true;
         var localAiModelName = NormalizeLocalAiModelName(LocalAiModelNameTextBox.Text);
-        var hotkeyKey = NormalizeHotkeyKey(HotkeyKeyComboBox.SelectedItem?.ToString());
+        var hotkeyKey = NormalizeTranslateHotkeyKey(HotkeyKeyComboBox.SelectedItem?.ToString());
+        var quickInputHotkeyKey = NormalizeQuickInputHotkeyKey(QuickInputHotkeyKeyComboBox.SelectedItem?.ToString());
         var targetLanguage = NormalizeTargetLanguage(TargetLanguageComboBox.SelectedValue?.ToString());
         var encryptedKeys = includeApiKey
             ? BuildEncryptedApiKeysFromUi()
@@ -1658,7 +2090,12 @@ public partial class MainWindow : FluentWindow
             HotkeyShift = HotkeyShiftCheckBox.IsChecked == true,
             HotkeyAlt = HotkeyAltCheckBox.IsChecked == true,
             HotkeyWin = HotkeyWinCheckBox.IsChecked == true,
-            HotkeyKey = hotkeyKey
+            HotkeyKey = hotkeyKey,
+            QuickInputHotkeyCtrl = QuickInputHotkeyCtrlCheckBox.IsChecked == true,
+            QuickInputHotkeyShift = QuickInputHotkeyShiftCheckBox.IsChecked == true,
+            QuickInputHotkeyAlt = QuickInputHotkeyAltCheckBox.IsChecked == true,
+            QuickInputHotkeyWin = QuickInputHotkeyWinCheckBox.IsChecked == true,
+            QuickInputHotkeyKey = quickInputHotkeyKey
         };
     }
 
@@ -1700,65 +2137,133 @@ public partial class MainWindow : FluentWindow
         );
     }
 
-    private bool TryRegisterHotkey(AppSettings settings, out string error)
+    private bool TryRegisterHotkeys(AppSettings settings, out string error)
     {
         error = string.Empty;
 
-        if (!TryBuildHotkey(settings, out var modifiers, out var key, out error))
+        if (!TryBuildTranslateHotkey(settings, out var translateModifiers, out var translateKey, out error))
         {
             return false;
         }
 
-        _hotkeyService?.Dispose();
-        _hotkeyService = new GlobalHotkeyService(this, HotkeyId, modifiers, key);
-        _hotkeyService.HotkeyPressed += HotkeyServiceOnHotkeyPressed;
+        if (!TryBuildQuickInputHotkey(settings, out var quickInputModifiers, out var quickInputKey, out error))
+        {
+            return false;
+        }
 
-        if (_hotkeyService.Register())
+        if (translateModifiers == quickInputModifiers && translateKey == quickInputKey)
+        {
+            error = "Hotkey popup nhập tay không được trùng với hotkey dịch.";
+            return false;
+        }
+
+        _translateHotkeyService?.Dispose();
+        _translateHotkeyService = null;
+        _quickInputHotkeyService?.Dispose();
+        _quickInputHotkeyService = null;
+
+        _translateHotkeyService = new GlobalHotkeyService(this, TranslateHotkeyId, translateModifiers, translateKey);
+        _translateHotkeyService.HotkeyPressed += HotkeyServiceOnHotkeyPressed;
+        if (!_translateHotkeyService.Register())
+        {
+            _translateHotkeyService.Dispose();
+            _translateHotkeyService = null;
+            error = $"Phím tắt dịch {BuildHotkeyDisplay(settings)} có thể đang bị ứng dụng khác sử dụng.";
+            return false;
+        }
+
+        _quickInputHotkeyService = new GlobalHotkeyService(this, QuickInputHotkeyId, quickInputModifiers, quickInputKey);
+        _quickInputHotkeyService.HotkeyPressed += QuickInputHotkeyServiceOnHotkeyPressed;
+        if (_quickInputHotkeyService.Register())
         {
             return true;
         }
 
-        _hotkeyService.Dispose();
-        _hotkeyService = null;
-        error = $"Phím tắt {BuildHotkeyDisplay(settings)} có thể đang bị ứng dụng khác sử dụng.";
+        _quickInputHotkeyService.Dispose();
+        _quickInputHotkeyService = null;
+
+        _translateHotkeyService.Dispose();
+        _translateHotkeyService = null;
+
+        error = $"Phím tắt popup nhập tay {BuildQuickInputHotkeyDisplay(settings)} có thể đang bị ứng dụng khác sử dụng.";
         return false;
     }
 
-    private static bool TryBuildHotkey(AppSettings settings, out ModifierKeys modifiers, out Key key, out string error)
+    private static bool TryBuildTranslateHotkey(AppSettings settings, out ModifierKeys modifiers, out Key key, out string error)
+    {
+        return TryBuildHotkey(
+            settings.HotkeyCtrl,
+            settings.HotkeyShift,
+            settings.HotkeyAlt,
+            settings.HotkeyWin,
+            NormalizeTranslateHotkeyKey(settings.HotkeyKey),
+            "Hotkey dịch",
+            out modifiers,
+            out key,
+            out error
+        );
+    }
+
+    private static bool TryBuildQuickInputHotkey(AppSettings settings, out ModifierKeys modifiers, out Key key, out string error)
+    {
+        return TryBuildHotkey(
+            settings.QuickInputHotkeyCtrl,
+            settings.QuickInputHotkeyShift,
+            settings.QuickInputHotkeyAlt,
+            settings.QuickInputHotkeyWin,
+            NormalizeQuickInputHotkeyKey(settings.QuickInputHotkeyKey),
+            "Hotkey popup nhập tay",
+            out modifiers,
+            out key,
+            out error
+        );
+    }
+
+    private static bool TryBuildHotkey(
+        bool ctrl,
+        bool shift,
+        bool alt,
+        bool win,
+        string hotkeyKey,
+        string hotkeyLabel,
+        out ModifierKeys modifiers,
+        out Key key,
+        out string error
+    )
     {
         modifiers = ModifierKeys.None;
         key = Key.None;
         error = string.Empty;
 
-        if (settings.HotkeyCtrl)
+        if (ctrl)
         {
             modifiers |= ModifierKeys.Control;
         }
 
-        if (settings.HotkeyShift)
+        if (shift)
         {
             modifiers |= ModifierKeys.Shift;
         }
 
-        if (settings.HotkeyAlt)
+        if (alt)
         {
             modifiers |= ModifierKeys.Alt;
         }
 
-        if (settings.HotkeyWin)
+        if (win)
         {
             modifiers |= ModifierKeys.Windows;
         }
 
         if (modifiers == ModifierKeys.None)
         {
-            error = "Hotkey cần ít nhất một phím bổ trợ (Ctrl/Shift/Alt/Win).";
+            error = $"{hotkeyLabel} cần ít nhất một phím bổ trợ (Ctrl/Shift/Alt/Win).";
             return false;
         }
 
-        if (!Enum.TryParse(settings.HotkeyKey, true, out key) || key == Key.None)
+        if (!Enum.TryParse(hotkeyKey, true, out key) || key == Key.None)
         {
-            error = "Phím chính của hotkey không hợp lệ.";
+            error = $"Phím chính của {hotkeyLabel.ToLowerInvariant()} không hợp lệ.";
             return false;
         }
 
@@ -1931,7 +2436,12 @@ public partial class MainWindow : FluentWindow
             HotkeyShiftCheckBox.IsChecked = settings.HotkeyShift;
             HotkeyAltCheckBox.IsChecked = settings.HotkeyAlt;
             HotkeyWinCheckBox.IsChecked = settings.HotkeyWin;
-            HotkeyKeyComboBox.SelectedItem = settings.HotkeyKey;
+            HotkeyKeyComboBox.SelectedItem = NormalizeTranslateHotkeyKey(settings.HotkeyKey);
+            QuickInputHotkeyCtrlCheckBox.IsChecked = settings.QuickInputHotkeyCtrl;
+            QuickInputHotkeyShiftCheckBox.IsChecked = settings.QuickInputHotkeyShift;
+            QuickInputHotkeyAltCheckBox.IsChecked = settings.QuickInputHotkeyAlt;
+            QuickInputHotkeyWinCheckBox.IsChecked = settings.QuickInputHotkeyWin;
+            QuickInputHotkeyKeyComboBox.SelectedItem = NormalizeQuickInputHotkeyKey(settings.QuickInputHotkeyKey);
 
             ShowHotkeyPreview(settings);
             UpdateApiProviderUiState(provider);
@@ -1944,33 +2454,56 @@ public partial class MainWindow : FluentWindow
 
     private void ShowHotkeyPreview(AppSettings settings)
     {
-        HotkeyPreviewTextBlock.Text = $"Hotkey hiện tại: {BuildHotkeyDisplay(settings)}";
+        HotkeyPreviewTextBlock.Text = $"Hotkey dịch: {BuildHotkeyDisplay(settings)}";
+        QuickInputHotkeyPreviewTextBlock.Text = $"Hotkey popup nhập tay: {BuildQuickInputHotkeyDisplay(settings)}";
     }
 
     private static string BuildHotkeyDisplay(AppSettings settings)
     {
+        return BuildHotkeyDisplay(
+            settings.HotkeyCtrl,
+            settings.HotkeyShift,
+            settings.HotkeyAlt,
+            settings.HotkeyWin,
+            settings.HotkeyKey
+        );
+    }
+
+    private static string BuildQuickInputHotkeyDisplay(AppSettings settings)
+    {
+        return BuildHotkeyDisplay(
+            settings.QuickInputHotkeyCtrl,
+            settings.QuickInputHotkeyShift,
+            settings.QuickInputHotkeyAlt,
+            settings.QuickInputHotkeyWin,
+            settings.QuickInputHotkeyKey
+        );
+    }
+
+    private static string BuildHotkeyDisplay(bool ctrl, bool shift, bool alt, bool win, string key)
+    {
         var parts = new List<string>(5);
-        if (settings.HotkeyCtrl)
+        if (ctrl)
         {
             parts.Add("Ctrl");
         }
 
-        if (settings.HotkeyShift)
+        if (shift)
         {
             parts.Add("Shift");
         }
 
-        if (settings.HotkeyAlt)
+        if (alt)
         {
             parts.Add("Alt");
         }
 
-        if (settings.HotkeyWin)
+        if (win)
         {
             parts.Add("Win");
         }
 
-        parts.Add(settings.HotkeyKey);
+        parts.Add(key);
         return string.Join("+", parts);
     }
 
@@ -2058,15 +2591,43 @@ public partial class MainWindow : FluentWindow
         return trimmed;
     }
 
-    private static string NormalizeHotkeyKey(string? key)
+    private static string NormalizeHotkeyKey(string? key, string fallbackKey)
     {
+        var normalizedFallback = fallbackKey.Trim().ToUpperInvariant();
+        if (!HotkeyKeys.Contains(normalizedFallback))
+        {
+            normalizedFallback = DefaultTranslateHotkeyKey;
+        }
+
         if (string.IsNullOrWhiteSpace(key))
         {
-            return "E";
+            return normalizedFallback;
         }
 
         var normalized = key.Trim().ToUpperInvariant();
-        return HotkeyKeys.Contains(normalized) ? normalized : "E";
+        return HotkeyKeys.Contains(normalized) ? normalized : normalizedFallback;
+    }
+
+    private static string NormalizeTranslateHotkeyKey(string? key)
+    {
+        return NormalizeHotkeyKey(key, DefaultTranslateHotkeyKey);
+    }
+
+    private static string NormalizeQuickInputHotkeyKey(string? key)
+    {
+        return NormalizeHotkeyKey(key, DefaultQuickInputHotkeyKey);
+    }
+
+    private static string ResolveNonConflictingQuickInputHotkeyKey(AppSettings settings)
+    {
+        var translateKey = NormalizeTranslateHotkeyKey(settings.HotkeyKey);
+        if (!string.Equals(translateKey, DefaultQuickInputHotkeyKey, StringComparison.Ordinal))
+        {
+            return DefaultQuickInputHotkeyKey;
+        }
+
+        return HotkeyKeys.FirstOrDefault(k => !string.Equals(k, translateKey, StringComparison.Ordinal))
+               ?? DefaultTranslateHotkeyKey;
     }
 
     private static string NormalizeTargetLanguage(string? targetLanguage)
@@ -2116,6 +2677,19 @@ public partial class MainWindow : FluentWindow
         return SupportedLanguages.FirstOrDefault(x => string.Equals(x.PromptName, normalized, StringComparison.OrdinalIgnoreCase))
                    ?.DisplayName
                ?? DefaultTargetLanguage;
+    }
+
+    private static bool AreHotkeysConflicting(AppSettings settings)
+    {
+        return settings.HotkeyCtrl == settings.QuickInputHotkeyCtrl &&
+               settings.HotkeyShift == settings.QuickInputHotkeyShift &&
+               settings.HotkeyAlt == settings.QuickInputHotkeyAlt &&
+               settings.HotkeyWin == settings.QuickInputHotkeyWin &&
+               string.Equals(
+                   NormalizeTranslateHotkeyKey(settings.HotkeyKey),
+                   NormalizeQuickInputHotkeyKey(settings.QuickInputHotkeyKey),
+                   StringComparison.Ordinal
+               );
     }
 
     private bool EnsureSettingsCompatibility(AppSettings settings)
@@ -2194,7 +2768,7 @@ public partial class MainWindow : FluentWindow
             changed = true;
         }
 
-        var normalizedKey = NormalizeHotkeyKey(settings.HotkeyKey);
+        var normalizedKey = NormalizeTranslateHotkeyKey(settings.HotkeyKey);
         if (!string.Equals(normalizedKey, settings.HotkeyKey, StringComparison.Ordinal))
         {
             settings.HotkeyKey = normalizedKey;
@@ -2205,6 +2779,33 @@ public partial class MainWindow : FluentWindow
         {
             settings.HotkeyCtrl = true;
             settings.HotkeyShift = true;
+            changed = true;
+        }
+
+        var normalizedQuickInputKey = NormalizeQuickInputHotkeyKey(settings.QuickInputHotkeyKey);
+        if (!string.Equals(normalizedQuickInputKey, settings.QuickInputHotkeyKey, StringComparison.Ordinal))
+        {
+            settings.QuickInputHotkeyKey = normalizedQuickInputKey;
+            changed = true;
+        }
+
+        if (!settings.QuickInputHotkeyCtrl &&
+            !settings.QuickInputHotkeyShift &&
+            !settings.QuickInputHotkeyAlt &&
+            !settings.QuickInputHotkeyWin)
+        {
+            settings.QuickInputHotkeyCtrl = true;
+            settings.QuickInputHotkeyShift = true;
+            changed = true;
+        }
+
+        if (AreHotkeysConflicting(settings))
+        {
+            settings.QuickInputHotkeyCtrl = true;
+            settings.QuickInputHotkeyShift = true;
+            settings.QuickInputHotkeyAlt = false;
+            settings.QuickInputHotkeyWin = false;
+            settings.QuickInputHotkeyKey = ResolveNonConflictingQuickInputHotkeyKey(settings);
             changed = true;
         }
 

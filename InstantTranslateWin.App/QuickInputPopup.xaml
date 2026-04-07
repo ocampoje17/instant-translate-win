@@ -1,0 +1,89 @@
+<ui:FluentWindow x:Class="InstantTranslateWin.App.QuickInputPopup"
+                 xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                 xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+                 xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+                 xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+                 mc:Ignorable="d"
+                 Width="500"
+                 MinWidth="400"
+                 MinHeight="0"
+                 SizeToContent="Height"
+                 WindowStartupLocation="Manual"
+                 ShowInTaskbar="False"
+                 ShowActivated="False"
+                 Topmost="True"
+                 ResizeMode="NoResize"
+                 WindowStyle="None"
+                 ExtendsContentIntoTitleBar="False"
+                 PreviewKeyDown="Window_PreviewKeyDown">
+    <Grid Margin="4">
+        <ui:Card Padding="6">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <Grid Grid.Row="0"
+                      Height="28"
+                      Margin="0,0,0,4"
+                      Background="Transparent"
+                      MouseLeftButtonDown="DragHandle_OnMouseLeftButtonDown">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <Grid>
+                        <Border Width="40"
+                                Height="4"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                Background="{DynamicResource ControlStrokeColorSecondaryBrush}"
+                                CornerRadius="2" />
+                    </Grid>
+
+                    <ui:Button Grid.Column="1"
+                               Width="26"
+                               Height="26"
+                               Margin="4,0,0,0"
+                               Padding="0"
+                               Appearance="Secondary"
+                               ToolTip="Tắt popup"
+                               Click="CloseButton_OnClick">
+                        <ui:Button.Icon>
+                            <ui:SymbolIcon Symbol="Dismiss24" />
+                        </ui:Button.Icon>
+                    </ui:Button>
+                </Grid>
+
+                <Grid Grid.Row="1">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <TextBox x:Name="InputTextBox"
+                             VerticalContentAlignment="Center"
+                             FontSize="13"
+                             TextWrapping="NoWrap"
+                             AcceptsReturn="False"
+                             ToolTip="Nhập nội dung cần dịch rồi bấm hotkey dịch"
+                             PreviewKeyDown="InputTextBox_OnPreviewKeyDown" />
+
+                    <ui:Button Grid.Column="1"
+                               Width="34"
+                               Margin="4,0,0,0"
+                               Appearance="Primary"
+                               ToolTip="Dịch"
+                               Click="TranslateButton_OnClick">
+                        <ui:Button.Icon>
+                            <ui:SymbolIcon Symbol="ArrowSwap24" />
+                        </ui:Button.Icon>
+                    </ui:Button>
+                </Grid>
+            </Grid>
+        </ui:Card>
+    </Grid>
+</ui:FluentWindow>

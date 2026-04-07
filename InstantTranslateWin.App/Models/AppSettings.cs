@@ -37,4 +37,14 @@ public sealed class AppSettings
     public bool HotkeyWin { get; set; }
 
     public string HotkeyKey { get; set; } = "E";
+
+    public bool QuickInputHotkeyCtrl { get; set; } = true;
+
+    public bool QuickInputHotkeyShift { get; set; } = true;
+
+    public bool QuickInputHotkeyAlt { get; set; }
+
+    public bool QuickInputHotkeyWin { get; set; }
+
+    public string QuickInputHotkeyKey { get; set; } = "H";
 }
