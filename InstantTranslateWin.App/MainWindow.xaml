@@ -135,19 +135,21 @@
                                                FontWeight="SemiBold"
                                                Text="Kết quả gần nhất từ phím tắt" />
                                 </StackPanel>
-                                <TextBlock Margin="0,10,0,0"
+                                <TextBlock Margin="0,12,0,0"
                                            FontWeight="SemiBold"
                                            Text="Nguồn" />
                                 <TextBox x:Name="LastSourceTextBox"
+                                         Margin="0,6,0,0"
                                          Height="90"
                                          IsReadOnly="True"
                                          AcceptsReturn="True"
                                          TextWrapping="Wrap"
                                          VerticalScrollBarVisibility="Auto" />
-                                <TextBlock Margin="0,10,0,0"
+                                <TextBlock Margin="0,12,0,0"
                                            FontWeight="SemiBold"
                                            Text="Bản dịch" />
                                 <TextBox x:Name="LastTranslatedTextBox"
+                                         Margin="0,6,0,0"
                                          Height="90"
                                          IsReadOnly="True"
                                          AcceptsReturn="True"
