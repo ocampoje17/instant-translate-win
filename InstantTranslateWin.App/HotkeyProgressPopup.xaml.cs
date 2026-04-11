@@ -16,10 +16,12 @@ public partial class HotkeyProgressPopup : FluentWindow
     public event EventHandler? QuickInputRequested;
 
     private const uint MonitorDefaultToNearest = 0x00000002;
+    private const double EdgeMargin = 16;
 
     private CancellationTokenSource? _closeCts;
     private bool _isPointerHovering;
     private bool _autoCloseRequested;
+    private bool _isUsingCustomPosition;
     private TimeSpan _scheduledCloseDelay = TimeSpan.FromSeconds(3);
 
     private readonly SolidColorBrush _successBadgeBrush = new(Color.FromRgb(54, 158, 94));
@@ -28,6 +30,7 @@ public partial class HotkeyProgressPopup : FluentWindow
     private readonly SolidColorBrush _processingBadgeBrush = new(Color.FromRgb(210, 138, 38));
     private readonly SolidColorBrush _clipboardBadgeBrush = new(Color.FromRgb(45, 152, 146));
     private readonly SolidColorBrush _historyBadgeBrush = new(Color.FromRgb(113, 91, 186));
+    private readonly HotkeyProgressPopupPositionStore _positionStore = new();
 
     [StructLayout(LayoutKind.Sequential)]
     private struct NativePoint
@@ -54,6 +57,8 @@ public partial class HotkeyProgressPopup : FluentWindow
         public uint Flags;
     }
 
+    private delegate bool NativeMonitorEnumProc(IntPtr hMonitor, IntPtr hdcMonitor, IntPtr lprcMonitor, IntPtr dwData);
+
     [DllImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool GetCursorPos(out NativePoint lpPoint);
@@ -64,6 +69,15 @@ public partial class HotkeyProgressPopup : FluentWindow
     [DllImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool GetMonitorInfo(IntPtr hMonitor, ref NativeMonitorInfo lpmi);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool EnumDisplayMonitors(
+        IntPtr hdc,
+        IntPtr lprcClip,
+        NativeMonitorEnumProc lpfnEnum,
+        IntPtr dwData
+    );
 
     public HotkeyProgressPopup()
     {
@@ -80,27 +94,12 @@ public partial class HotkeyProgressPopup : FluentWindow
 
         try
         {
-            PositionAtBottomRight();
+            PositionAtPreferredLocation();
         }
         catch (Exception ex)
         {
             ErrorFileLogger.LogException("HotkeyProgressPopup.ShowAtBottomRight.PositionFallback", ex);
-            // Fallback to default location if measuring/positioning fails.
-            var workArea = SystemParameters.WorkArea;
-            var width = ActualWidth > 0 ? ActualWidth : Width;
-            var height = ActualHeight > 0 ? ActualHeight : Height;
-            if (double.IsNaN(width) || width <= 0)
-            {
-                width = 320;
-            }
-
-            if (double.IsNaN(height) || height <= 0)
-            {
-                height = 110;
-            }
-
-            Left = workArea.Right - width - 16;
-            Top = workArea.Bottom - height - 16;
+            ApplyBottomRightPosition();
         }
     }
 
@@ -152,7 +151,7 @@ public partial class HotkeyProgressPopup : FluentWindow
         ResultTitleTextBlock.Text = "Dịch thành công";
         ResultMessageTextBlock.Text = $"Kết quả: {NormalizeSingleLine(resultText, 96)}";
         TitleTextBlock.Text = NormalizeSingleLine(subtitle, 64);
-        PositionAtBottomRight();
+        EnsureCurrentPositionIsVisible();
     }
 
     public void SetErrorState(string subtitle, bool showQuickInputAction = false, bool showRestartAction = false)
@@ -171,7 +170,7 @@ public partial class HotkeyProgressPopup : FluentWindow
         ResultTitleTextBlock.Text = "Dịch thất bại";
         ResultMessageTextBlock.Text = NormalizeSingleLine(subtitle, 96);
         TitleTextBlock.Text = "Có lỗi xảy ra";
-        PositionAtBottomRight();
+        EnsureCurrentPositionIsVisible();
     }
 
     public void ScheduleClose(TimeSpan delay)
@@ -204,6 +203,30 @@ public partial class HotkeyProgressPopup : FluentWindow
         {
             // Hover xong rời chuột: reset countdown từ đầu theo delay đã lên lịch.
             StartCloseCountdown(_scheduledCloseDelay);
+        }
+    }
+
+    private void ShellBorder_OnMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.LeftButton != MouseButtonState.Pressed)
+        {
+            return;
+        }
+
+        if (e.OriginalSource is DependencyObject source &&
+            FindVisualParent<System.Windows.Controls.Primitives.ButtonBase>(source) is not null)
+        {
+            return;
+        }
+
+        try
+        {
+            DragMove();
+            SaveCurrentPositionAsCustom();
+        }
+        catch (Exception ex)
+        {
+            ErrorFileLogger.LogException("HotkeyProgressPopup.ShellBorder_OnMouseLeftButtonDown", ex);
         }
     }
 
@@ -240,20 +263,162 @@ public partial class HotkeyProgressPopup : FluentWindow
         }, token);
     }
 
-    private void PositionAtBottomRight()
+    private void PositionAtPreferredLocation()
     {
-        if (!IsLoaded)
+        // Chỉ dùng lại vị trí đã lưu nếu popup còn nằm gọn trên một màn hình thực tế.
+        if (_positionStore.TryLoad(out var savedPosition) && IsPositionVisibleOnAnyScreen(savedPosition))
+        {
+            Left = savedPosition.X;
+            Top = savedPosition.Y;
+            _isUsingCustomPosition = true;
+            return;
+        }
+
+        if (_positionStore.TryLoad(out _))
+        {
+            _positionStore.Clear();
+        }
+
+        ApplyBottomRightPosition();
+        _isUsingCustomPosition = false;
+    }
+
+    private void ApplyBottomRightPosition()
+    {
+        if (!TryGetPopupSize(out var width, out var height))
         {
             return;
         }
 
-        var width = ActualWidth;
+        var workArea = ResolveCurrentMonitorWorkArea();
+        var defaultPosition = BuildBottomRightPosition(workArea, width, height);
+        Left = defaultPosition.X;
+        Top = defaultPosition.Y;
+    }
+
+    private void EnsureCurrentPositionIsVisible()
+    {
+        if (!_isUsingCustomPosition)
+        {
+            ApplyBottomRightPosition();
+            return;
+        }
+
+        var currentPosition = new Point(Left, Top);
+        if (IsPositionVisibleOnAnyScreen(currentPosition))
+        {
+            return;
+        }
+
+        // Layout hoặc cấu hình màn hình có thể đã đổi sau lần kéo cuối; reset về mặc định an toàn.
+        _positionStore.Clear();
+        _isUsingCustomPosition = false;
+        ApplyBottomRightPosition();
+    }
+
+    private void SaveCurrentPositionAsCustom()
+    {
+        var currentPosition = new Point(Left, Top);
+        if (!IsPositionVisibleOnAnyScreen(currentPosition))
+        {
+            _positionStore.Clear();
+            _isUsingCustomPosition = false;
+            ApplyBottomRightPosition();
+            return;
+        }
+
+        _positionStore.Save(currentPosition);
+        _isUsingCustomPosition = true;
+    }
+
+    private bool IsPositionVisibleOnAnyScreen(Point position)
+    {
+        if (!TryGetPopupSize(out var width, out var height))
+        {
+            return false;
+        }
+
+        var popupBounds = new Rect(position.X, position.Y, width, height);
+        foreach (var workArea in ResolveAllMonitorWorkAreas())
+        {
+            if (workArea.Contains(popupBounds.TopLeft) && workArea.Contains(popupBounds.BottomRight))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private IEnumerable<Rect> ResolveAllMonitorWorkAreas()
+    {
+        var workAreas = new List<Rect>();
+        var source = PresentationSource.FromVisual(this);
+        var transformFromDevice = source?.CompositionTarget?.TransformFromDevice ?? Matrix.Identity;
+
+        // Duyệt từng monitor thật thay vì chỉ dùng virtual screen để tránh coi khoảng trống giữa màn hình là hợp lệ.
+        var callback = new NativeMonitorEnumProc((monitor, _, _, _) =>
+        {
+            var monitorInfo = new NativeMonitorInfo
+            {
+                Size = Marshal.SizeOf<NativeMonitorInfo>()
+            };
+
+            if (!GetMonitorInfo(monitor, ref monitorInfo))
+            {
+                return true;
+            }
+
+            var topLeft = transformFromDevice.Transform(new Point(monitorInfo.Work.Left, monitorInfo.Work.Top));
+            var bottomRight = transformFromDevice.Transform(new Point(monitorInfo.Work.Right, monitorInfo.Work.Bottom));
+            workAreas.Add(new Rect(topLeft, bottomRight));
+            return true;
+        });
+
+        if (!EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero, callback, IntPtr.Zero) || workAreas.Count == 0)
+        {
+            workAreas.Add(SystemParameters.WorkArea);
+        }
+
+        return workAreas;
+    }
+
+    private Point BuildBottomRightPosition(Rect workArea, double width, double height)
+    {
+        var targetLeft = workArea.Right - width - EdgeMargin;
+        var targetTop = workArea.Bottom - height - EdgeMargin;
+
+        var minLeft = workArea.Left + EdgeMargin;
+        var minTop = workArea.Top + EdgeMargin;
+
+        var maxLeft = workArea.Right - width - EdgeMargin;
+        var maxTop = workArea.Bottom - height - EdgeMargin;
+
+        if (maxLeft < minLeft)
+        {
+            maxLeft = minLeft;
+        }
+
+        if (maxTop < minTop)
+        {
+            maxTop = minTop;
+        }
+
+        return new Point(
+            Math.Clamp(targetLeft, minLeft, maxLeft),
+            Math.Clamp(targetTop, minTop, maxTop)
+        );
+    }
+
+    private bool TryGetPopupSize(out double width, out double height)
+    {
+        width = ActualWidth;
         if (width <= 0 || double.IsNaN(width))
         {
             width = Width;
         }
 
-        var height = ActualHeight;
+        height = ActualHeight;
         if (height <= 0 || double.IsNaN(height))
         {
             height = Height;
@@ -268,33 +433,11 @@ public partial class HotkeyProgressPopup : FluentWindow
 
         if (double.IsNaN(width) || double.IsNaN(height) || width <= 0 || height <= 0)
         {
-            return;
+            width = 400;
+            height = 120;
         }
 
-        var workArea = ResolveCurrentMonitorWorkArea();
-        const double edgeMargin = 16;
-
-        var targetLeft = workArea.Right - width - edgeMargin;
-        var targetTop = workArea.Bottom - height - edgeMargin;
-
-        var minLeft = workArea.Left + edgeMargin;
-        var minTop = workArea.Top + edgeMargin;
-
-        var maxLeft = workArea.Right - width - edgeMargin;
-        var maxTop = workArea.Bottom - height - edgeMargin;
-
-        if (maxLeft < minLeft)
-        {
-            maxLeft = minLeft;
-        }
-
-        if (maxTop < minTop)
-        {
-            maxTop = minTop;
-        }
-
-        Left = Math.Clamp(targetLeft, minLeft, maxLeft);
-        Top = Math.Clamp(targetTop, minTop, maxTop);
+        return width > 0 && height > 0;
     }
 
     private Rect ResolveCurrentMonitorWorkArea()
@@ -325,6 +468,22 @@ public partial class HotkeyProgressPopup : FluentWindow
         var topLeft = transformFromDevice.Transform(new Point(monitorInfo.Work.Left, monitorInfo.Work.Top));
         var bottomRight = transformFromDevice.Transform(new Point(monitorInfo.Work.Right, monitorInfo.Work.Bottom));
         return new Rect(topLeft, bottomRight);
+    }
+
+    private static T? FindVisualParent<T>(DependencyObject source) where T : DependencyObject
+    {
+        var current = source;
+        while (current is not null)
+        {
+            if (current is T match)
+            {
+                return match;
+            }
+
+            current = VisualTreeHelper.GetParent(current);
+        }
+
+        return null;
     }
 
     private void CancelScheduledClose()

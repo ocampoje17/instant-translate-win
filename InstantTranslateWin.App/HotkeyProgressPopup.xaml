@@ -17,7 +17,8 @@
                  PreviewKeyDown="Window_PreviewKeyDown">
     <Grid Margin="8"
           MouseEnter="ShellBorder_OnMouseEnter"
-          MouseLeave="ShellBorder_OnMouseLeave">
+          MouseLeave="ShellBorder_OnMouseLeave"
+          MouseLeftButtonDown="ShellBorder_OnMouseLeftButtonDown">
         <ui:Card Padding="12">
             <Grid>
                 <Grid.RowDefinitions>
