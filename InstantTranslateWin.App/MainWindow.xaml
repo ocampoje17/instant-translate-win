@@ -17,6 +17,7 @@
     <ui:FluentWindow.Resources>
         <ContextMenu x:Key="TrayMenu">
             <ui:MenuItem Header="Mở lại" Icon="{ui:SymbolIcon Window24}" Click="TrayOpenMenuItem_Click" />
+            <ui:MenuItem Header="Ngôn ngữ đích" Icon="{ui:SymbolIcon Globe24}" Tag="TrayTargetLanguageRoot" />
             <Separator />
             <ui:MenuItem Header="Thoát" Icon="{ui:SymbolIcon Delete24}" Click="TrayExitMenuItem_Click" />
         </ContextMenu>

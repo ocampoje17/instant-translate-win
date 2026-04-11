@@ -90,6 +90,7 @@ public partial class MainWindow : FluentWindow
     private HotkeyProgressPopup? _hotkeyPopup;
     private QuickInputPopup? _quickInputPopup;
     private readonly Stack<NavigationViewItem> _navigationBackStack = new();
+    private readonly Dictionary<string, Wpf.Ui.Controls.MenuItem> _trayTargetLanguageMenuItems = new(StringComparer.OrdinalIgnoreCase);
     private string? _currentTranslatingInput;
     private string? _currentManualTranslatingInput;
     private CancellationTokenSource? _manualTranslationCts;
@@ -230,6 +231,7 @@ public partial class MainWindow : FluentWindow
 
         InitializeHotkeyOptions();
         InitializeLanguageOptions();
+        InitializeTrayTargetLanguageMenu();
         InitializeThemeOptions();
 
         _state = await _stateStore.LoadAsync();
@@ -514,6 +516,37 @@ public partial class MainWindow : FluentWindow
     private void TrayOpenMenuItem_Click(object sender, RoutedEventArgs e)
     {
         RestoreWindowFromTray();
+    }
+
+    private void TrayTargetLanguageOptionMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Wpf.Ui.Controls.MenuItem menuItem)
+        {
+            return;
+        }
+
+        var normalizedTargetLanguage = NormalizeTargetLanguage(menuItem.Tag?.ToString());
+        var currentTargetLanguage = NormalizeTargetLanguage(TargetLanguageComboBox.SelectedValue?.ToString());
+        if (string.Equals(currentTargetLanguage, normalizedTargetLanguage, StringComparison.Ordinal))
+        {
+            UpdateTrayTargetLanguageMenuSelection(normalizedTargetLanguage);
+            ShowStatus(
+                "Ngôn ngữ đích giữ nguyên",
+                $"Đang dùng {GetTargetLanguageDisplayName(normalizedTargetLanguage)}.",
+                InfoBarSeverity.Informational
+            );
+            return;
+        }
+
+        TargetLanguageComboBox.SelectedValue = normalizedTargetLanguage;
+        ManualTargetLanguageComboBox.SelectedValue = normalizedTargetLanguage;
+        _isManualTargetLanguageInitialized = true;
+        UpdateTrayTargetLanguageMenuSelection(normalizedTargetLanguage);
+        ShowStatus(
+            "Đã đổi ngôn ngữ đích",
+            $"Ngôn ngữ đích hiện tại: {GetTargetLanguageDisplayName(normalizedTargetLanguage)}.",
+            InfoBarSeverity.Success
+        );
     }
 
     private void TrayExitMenuItem_Click(object sender, RoutedEventArgs e)
@@ -2057,6 +2090,7 @@ public partial class MainWindow : FluentWindow
             }
 
             _state.Settings = newSettings;
+            UpdateTrayTargetLanguageMenuSelection(newSettings.TargetLanguage);
             await PersistStateAsync();
             ShowHotkeyPreview(newSettings);
             if (!HasActiveTranslation())
@@ -2663,6 +2697,7 @@ public partial class MainWindow : FluentWindow
                 ManualTargetLanguageComboBox.SelectedValue = NormalizeTargetLanguage(settings.TargetLanguage);
                 _isManualTargetLanguageInitialized = true;
             }
+            UpdateTrayTargetLanguageMenuSelection(settings.TargetLanguage);
             AppThemeComboBox.SelectedValue = NormalizeAppTheme(settings.AppTheme);
             CopyToClipboardCheckBox.IsChecked = settings.CopyTranslationToClipboard;
             KeepRunningInBackgroundOnCloseCheckBox.IsChecked = settings.KeepRunningInBackgroundOnClose;
@@ -3124,6 +3159,73 @@ public partial class MainWindow : FluentWindow
         {
             TargetLanguageOptions.Add(language);
         }
+    }
+
+    private void InitializeTrayTargetLanguageMenu()
+    {
+        if (_trayTargetLanguageMenuItems.Count > 0)
+        {
+            UpdateTrayTargetLanguageMenuSelection(_state.Settings.TargetLanguage);
+            return;
+        }
+
+        var rootMenuItem = GetTrayTargetLanguageRootMenuItem();
+        if (rootMenuItem is null)
+        {
+            return;
+        }
+
+        rootMenuItem.Items.Clear();
+        _trayTargetLanguageMenuItems.Clear();
+
+        foreach (var language in SupportedLanguages)
+        {
+            var normalizedPromptName = NormalizeTargetLanguage(language.PromptName);
+            var menuItem = new Wpf.Ui.Controls.MenuItem
+            {
+                Header = language.DisplayName,
+                Tag = normalizedPromptName,
+                IsCheckable = true
+            };
+            menuItem.Click += TrayTargetLanguageOptionMenuItem_Click;
+
+            rootMenuItem.Items.Add(menuItem);
+            _trayTargetLanguageMenuItems[normalizedPromptName] = menuItem;
+        }
+
+        UpdateTrayTargetLanguageMenuSelection(_state.Settings.TargetLanguage);
+    }
+
+    private void UpdateTrayTargetLanguageMenuSelection(string? targetLanguage)
+    {
+        if (_trayTargetLanguageMenuItems.Count == 0)
+        {
+            return;
+        }
+
+        var normalizedTargetLanguage = NormalizeTargetLanguage(targetLanguage);
+        foreach (var item in _trayTargetLanguageMenuItems)
+        {
+            item.Value.IsChecked = string.Equals(item.Key, normalizedTargetLanguage, StringComparison.OrdinalIgnoreCase);
+        }
+
+        var rootMenuItem = GetTrayTargetLanguageRootMenuItem();
+        if (rootMenuItem is not null)
+        {
+            rootMenuItem.Header = $"Ngôn ngữ đích: {GetTargetLanguageDisplayName(normalizedTargetLanguage)}";
+        }
+    }
+
+    private Wpf.Ui.Controls.MenuItem? GetTrayTargetLanguageRootMenuItem()
+    {
+        if (TryFindResource("TrayMenu") is not ContextMenu trayMenu)
+        {
+            return null;
+        }
+
+        return trayMenu.Items
+            .OfType<Wpf.Ui.Controls.MenuItem>()
+            .FirstOrDefault(item => string.Equals(item.Tag?.ToString(), "TrayTargetLanguageRoot", StringComparison.Ordinal));
     }
 
     private void InitializeThemeOptions()
