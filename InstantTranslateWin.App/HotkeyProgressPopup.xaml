@@ -163,37 +163,39 @@
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
 
                             <ui:Button x:Name="OpenQuickInputButton"
                                        Appearance="Primary"
                                        Content="Mở popup nhập liệu"
                                        Icon="{ui:SymbolIcon Edit24}"
+                                       Visibility="Collapsed"
                                        Click="OpenQuickInputButton_OnClick" />
 
-                            <ui:DropDownButton x:Name="MoreActionsButton"
-                                               Grid.Column="1"
-                                               Width="36"
-                                               Height="36"
-                                               Margin="8,0,0,0"
-                                               Appearance="Secondary"
-                                               Icon="{ui:SymbolIcon MoreHorizontal24}"
-                                               ToolTip="Xem thêm">
-                                <ui:DropDownButton.Flyout>
-                                    <ui:Flyout Placement="Bottom">
-                                        <StackPanel MinWidth="180">
-                                            <ui:MenuItem x:Name="OpenLogFileMenuItem"
-                                                         Header="Mở file log"
-                                                         Icon="{ui:SymbolIcon Document24}"
-                                                         Click="OpenLogFileMenuItem_OnClick" />
-                                            <ui:MenuItem x:Name="RestartAppMenuItem"
-                                                         Header="Khởi động lại app"
-                                                         Icon="{ui:SymbolIcon ArrowClockwise24}"
-                                                         Click="RestartAppMenuItem_OnClick" />
-                                        </StackPanel>
-                                    </ui:Flyout>
-                                </ui:DropDownButton.Flyout>
-                            </ui:DropDownButton>
+                            <ui:Button x:Name="OpenLogFileButton"
+                                       Grid.Column="1"
+                                       Width="36"
+                                       Height="36"
+                                       Margin="8,0,0,0"
+                                       Padding="0"
+                                       Appearance="Secondary"
+                                       Icon="{ui:SymbolIcon Document24}"
+                                       ToolTip="Mở file log"
+                                       Click="OpenLogFileButton_OnClick" />
+
+                            <ui:Button x:Name="RestartAppButton"
+                                       Grid.Column="2"
+                                       Width="36"
+                                       Height="36"
+                                       Margin="8,0,0,0"
+                                       Padding="0"
+                                       Appearance="Danger"
+                                       Icon="{ui:SymbolIcon ArrowClockwise24}"
+                                       Visibility="Collapsed"
+                                       ToolTip="Khởi động lại app"
+                                       Click="RestartAppButton_OnClick" />
                         </Grid>
                     </StackPanel>
                 </Grid>

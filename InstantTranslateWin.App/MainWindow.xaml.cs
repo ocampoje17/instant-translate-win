@@ -1324,17 +1324,20 @@ public partial class MainWindow : FluentWindow
                 if (popup is not null)
                 {
                     popup.AddStep("Không thể đọc text đang chọn.");
-                    popup.SetErrorState("Hãy chọn lại đoạn văn bản rồi thử lại. Nếu vẫn lỗi, hãy khởi động lại app.", showRestartAction: true);
+                    popup.SetErrorState(
+                        "Hãy chọn lại đoạn văn bản rồi thử lại. Nếu vẫn lỗi, bạn có thể mở popup nhập tay hoặc khởi động lại app.",
+                        showQuickInputAction: true,
+                        showRestartAction: true
+                    );
                     // Popup lỗi: giữ lâu hơn để user kịp đọc và bấm hành động.
                     popup.ScheduleClose(TimeSpan.FromSeconds(10));
                 }
 
                 ShowStatus(
                     "Không có text",
-                    $"Không đọc được text đang chọn. Popup nhập tay đã mở ({BuildQuickInputHotkeyDisplay(_state.Settings)}).",
+                    $"Không đọc được text đang chọn. Bấm nút mở popup nhập liệu trong popup lỗi nếu cần nhập tay ({BuildQuickInputHotkeyDisplay(_state.Settings)}).",
                     InfoBarSeverity.Warning
                 );
-                ShowQuickInputPopup(clearText: true);
                 return;
             }
 

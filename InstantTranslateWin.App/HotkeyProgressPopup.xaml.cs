@@ -155,13 +155,14 @@ public partial class HotkeyProgressPopup : FluentWindow
         PositionAtBottomRight();
     }
 
-    public void SetErrorState(string subtitle, bool showRestartAction = false)
+    public void SetErrorState(string subtitle, bool showQuickInputAction = false, bool showRestartAction = false)
     {
         LoadingPage.Visibility = Visibility.Hidden;
         ResultPage.Visibility = Visibility.Visible;
         ResultActionsPanel.Visibility = Visibility.Visible;
-        RestartAppMenuItem.Visibility = showRestartAction ? Visibility.Visible : Visibility.Collapsed;
-        OpenLogFileMenuItem.Visibility = Visibility.Visible;
+        OpenQuickInputButton.Visibility = showQuickInputAction ? Visibility.Visible : Visibility.Collapsed;
+        RestartAppButton.Visibility = showRestartAction ? Visibility.Visible : Visibility.Collapsed;
+        OpenLogFileButton.Visibility = Visibility.Visible;
 
         ResultStateIcon.Symbol = SymbolRegular.ErrorCircle24;
         ResultIconBadge.Background = _errorBadgeBrush;
@@ -369,13 +370,13 @@ public partial class HotkeyProgressPopup : FluentWindow
         QuickInputRequested?.Invoke(this, EventArgs.Empty);
     }
 
-    private void RestartAppMenuItem_OnClick(object sender, RoutedEventArgs e)
+    private void RestartAppButton_OnClick(object sender, RoutedEventArgs e)
     {
         _autoCloseRequested = false;
         RestartAppRequested?.Invoke(this, EventArgs.Empty);
     }
 
-    private void OpenLogFileMenuItem_OnClick(object sender, RoutedEventArgs e)
+    private void OpenLogFileButton_OnClick(object sender, RoutedEventArgs e)
     {
         _autoCloseRequested = false;
 
@@ -396,7 +397,7 @@ public partial class HotkeyProgressPopup : FluentWindow
         }
         catch (Exception ex)
         {
-            ErrorFileLogger.LogException("HotkeyProgressPopup.OpenLogFileMenuItem_OnClick", ex);
+            ErrorFileLogger.LogException("HotkeyProgressPopup.OpenLogFileButton_OnClick", ex);
             System.Windows.MessageBox.Show(
                 $"Không mở được log file: {ex.Message}",
                 "Instant Translate",

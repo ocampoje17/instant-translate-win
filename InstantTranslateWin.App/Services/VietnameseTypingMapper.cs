@@ -65,6 +65,12 @@ public static class VietnameseTypingMapper
             return true;
         }
 
+        if (action == TransformAction.ShapeW && TryApplyStandaloneShapeW(source, input, out changed))
+        {
+            transformedText = changed;
+            return true;
+        }
+
         if (TryApplyRepeatedToneAsLiteral(source, action, out changed))
         {
             transformedText = changed + input;
@@ -294,6 +300,18 @@ public static class VietnameseTypingMapper
         }
 
         return false;
+    }
+
+    private static bool TryApplyStandaloneShapeW(string text, char input, out string transformedText)
+    {
+        transformedText = text;
+        if (char.ToLowerInvariant(input) != 'w')
+        {
+            return false;
+        }
+
+        transformedText = text + Compose(VowelSeries.UW, 0, char.IsUpper(input));
+        return true;
     }
 
     private static bool TryApplyUoHornPair(string fullText, string word, int wordStart, out string transformedText)
